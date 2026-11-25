@@ -102,6 +102,13 @@ _G.LexusConfig = _G.LexusConfig or {
     Esp9_Distance = true, -- Khoảng cách
     Esp9_Line = true,     -- Sợi Line
     Esp9_Skeleton = true, -- Skeleton (Khung xương)
+    Esp9_Box = false,            -- [BOX] 2D Box ESP
+    Esp9_HPBar = true,           -- [BOX] Health bar
+    Esp9_BoxColorVis = 2,        -- 1:Merah 2:Hijau 3:Biru 4:Kuning 5:Ungu 6:Putih 7:Cyan
+    Esp9_BoxColorHid = 1,
+    Esp9_BoxThickness = 1,
+    Esp9_SkelColorVis = 2,
+    Esp9_SkelColorHid = 1,
     EspBomMaster = false,
     EspItemBom = false,
     EspActiveBom = false,
@@ -5500,6 +5507,68 @@ function _G.InitModMenuTab()
                     _G.LexusConfig.Esp9_Skeleton = v
                     return true
                 end
+            },
+            {
+                Key = "ModMenu_ESP9_Box_Ex",
+                UI = AliasMap.TitleSwitcher,
+                Text = T("▶ BOX ESP 2D + HEALTH BAR", "▶ 2D BOX ESP + HEALTH BAR"),
+                ExpandIndex = 0,
+                GetFunc = function() return _G.LexusConfig.Esp9_Box end,
+                SetFunc = function(c, v) _G.LexusConfig.Esp9_Box = v; return true end
+            },
+            {
+                Key = "ModMenu_ESP9_HPBar",
+                UI = AliasMap.Switcher,
+                Text = T("   Tampilkan Health Bar di Box", "   Show Health Bar on Box"),
+                ExpandHandle = "ModMenu_ESP9_Box_Ex",
+                GetFunc = function() return _G.LexusConfig.Esp9_HPBar end,
+                SetFunc = function(c, v) _G.LexusConfig.Esp9_HPBar = v; return true end
+            },
+            {
+                Key = "ModMenu_ESP9_BoxThick",
+                UI = AliasMap.Slider,
+                Text = T("   Ketebalan Garis Box (1-5)", "   Box Line Thickness (1-5)"),
+                ExpandHandle = "ModMenu_ESP9_Box_Ex",
+                MinValue = 1, MaxValue = 5,
+                GetFunc = function() return _G.LexusConfig.Esp9_BoxThickness or 1 end,
+                SetFunc = function(c, v) _G.LexusConfig.Esp9_BoxThickness = v; return true end
+            },
+            {
+                Key = "ModMenu_ESP9_BoxVis",
+                UI = AliasMap.Slider,
+                Text = T("   Warna Box Terlihat (1:Merah 2:Hijau 3:Biru 4:Kuning 5:Ungu 6:Putih 7:Cyan)",
+                    "   Box Visible Color (1:Red 2:Grn 3:Blu 4:Ylw 5:Pur 6:Wht 7:Cyan)"),
+                ExpandHandle = "ModMenu_ESP9_Box_Ex",
+                MinValue = 1, MaxValue = 7,
+                GetFunc = function() return _G.LexusConfig.Esp9_BoxColorVis or 2 end,
+                SetFunc = function(c, v) _G.LexusConfig.Esp9_BoxColorVis = v; return true end
+            },
+            {
+                Key = "ModMenu_ESP9_BoxHid",
+                UI = AliasMap.Slider,
+                Text = T("   Warna Box di Balik Tembok (1-7)", "   Box Hidden Color (1-7)"),
+                ExpandHandle = "ModMenu_ESP9_Box_Ex",
+                MinValue = 1, MaxValue = 7,
+                GetFunc = function() return _G.LexusConfig.Esp9_BoxColorHid or 1 end,
+                SetFunc = function(c, v) _G.LexusConfig.Esp9_BoxColorHid = v; return true end
+            },
+            {
+                Key = "ModMenu_ESP9_SkelVis",
+                UI = AliasMap.Slider,
+                Text = T("   Warna Rangka Terlihat (1-7)", "   Skeleton Visible Color (1-7)"),
+                ExpandHandle = "ModMenu_ESP9_Box_Ex",
+                MinValue = 1, MaxValue = 7,
+                GetFunc = function() return _G.LexusConfig.Esp9_SkelColorVis or 2 end,
+                SetFunc = function(c, v) _G.LexusConfig.Esp9_SkelColorVis = v; return true end
+            },
+            {
+                Key = "ModMenu_ESP9_SkelHid",
+                UI = AliasMap.Slider,
+                Text = T("   Warna Rangka di Balik Tembok (1-7)", "   Skeleton Hidden Color (1-7)"),
+                ExpandHandle = "ModMenu_ESP9_Box_Ex",
+                MinValue = 1, MaxValue = 7,
+                GetFunc = function() return _G.LexusConfig.Esp9_SkelColorHid or 1 end,
+                SetFunc = function(c, v) _G.LexusConfig.Esp9_SkelColorHid = v; return true end
             }
         }
 
@@ -9928,6 +9997,7 @@ function PlayerMapMarker.RemoveESPWidget(Widget, KeyStr)
         PlayerMapMarker.RemoveSnapLine(KeyStr)
         if PlayerMapMarker.RemoveSkeletonLines then
             PlayerMapMarker.RemoveSkeletonLines(KeyStr)
+            PlayerMapMarker.DestroyBoxESP(KeyStr)
         end
     end
 end
@@ -10439,6 +10509,238 @@ end
 
 -- ====== KẾT THÚC: LOGIC SKELETON ======
 
+-- ====== BOX ESP 2D + HEALTH BAR (CUSTOM) ======
+PlayerMapMarker.ESPColorPalette = {
+    { 1.00, 0.00, 0.00 }, -- 1 red
+    { 0.00, 1.00, 0.00 }, -- 2 green
+    { 0.10, 0.55, 1.00 }, -- 3 blue
+    { 1.00, 0.90, 0.00 }, -- 4 yellow
+    { 1.00, 0.00, 1.00 }, -- 5 magenta
+    { 1.00, 1.00, 1.00 }, -- 6 white
+    { 0.00, 1.00, 1.00 }, -- 7 cyan
+}
+PlayerMapMarker.BoxWidgets = {}
+PlayerMapMarker.BoxWidgets = PlayerMapMarker.BoxWidgets or {}
+
+function PlayerMapMarker.GetESPColor(idx, alpha)
+    local p = PlayerMapMarker.ESPColorPalette[idx] or PlayerMapMarker.ESPColorPalette[2]
+    local a = alpha or 1.0
+    if FLinearColor then
+        return FLinearColor(p[1], p[2], p[3], a)
+    end
+    return { R = p[1] * 255, G = p[2] * 255, B = p[3] * 255, A = a * 255 }
+end
+
+function PlayerMapMarker.CreateBoxWidgetSet()
+    local set = { Lines = {} }
+    for i = 1, 4 do
+        set.Lines[i] = PlayerMapMarker.CreateSkeletonLineWidget()
+    end
+    set.HPBg = PlayerMapMarker.CreateSkeletonLineWidget()
+    set.HPFill = PlayerMapMarker.CreateSkeletonLineWidget()
+    return set
+end
+
+function PlayerMapMarker.HideBoxWidgetSet(set)
+    if not set then return end
+    local function hide(ld)
+        if ld and ld.Widget and slua.isValid(ld.Widget) then
+            ld.Widget:SetWidgetVisibility(UEnums.ESlateVisibility.Collapsed)
+            ld.Widget._isSelfHitTestVisible = false
+        end
+    end
+    for i = 1, #(set.Lines or {}) do hide(set.Lines[i]) end
+    hide(set.HPBg)
+    hide(set.HPFill)
+end
+
+function PlayerMapMarker.DestroyBoxWidgetSet(set)
+    if not set then return end
+    local function destroy(ld)
+        if ld and ld.Widget and slua.isValid(ld.Widget) then
+            pcall(function()
+                ld.Widget:RemoveFromParent()
+                ld.Widget:ConditionalBeginDestroy()
+            end)
+        end
+    end
+    for i = 1, #(set.Lines or {}) do destroy(set.Lines[i]) end
+    destroy(set.HPBg)
+    destroy(set.HPFill)
+end
+
+function PlayerMapMarker.RemoveBoxESP(KeyStr)
+    PlayerMapMarker.HideBoxWidgetSet(PlayerMapMarker.BoxWidgets[KeyStr])
+end
+
+function PlayerMapMarker.DestroyBoxESP(KeyStr)
+    local set = PlayerMapMarker.BoxWidgets[KeyStr]
+    if set then
+        PlayerMapMarker.DestroyBoxWidgetSet(set)
+        PlayerMapMarker.BoxWidgets[KeyStr] = nil
+    end
+end
+
+function PlayerMapMarker.ClearAllBoxESP()
+    for KeyStr, set in pairs(PlayerMapMarker.BoxWidgets) do
+        PlayerMapMarker.DestroyBoxWidgetSet(set)
+    end
+    PlayerMapMarker.BoxWidgets = {}
+end
+
+function PlayerMapMarker.PlaceESPLine(LineData, fromX, fromY, toX, toY, thickness, color)
+    if not LineData or not LineData.Widget or not slua.isValid(LineData.Widget) or not LineData.Slot then return end
+    local dx, dy = toX - fromX, toY - fromY
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length < 0.5 then length = 0.5 end
+    local angle = 0
+    if math.atan2 then
+        angle = math.atan2(dy, dx) * 57.29577951308232
+    else
+        angle = math.atan(dy, dx) * 57.29577951308232
+    end
+    local pVec = LineData.posVec
+    pVec.X = fromX
+    pVec.Y = fromY - thickness / 2.0
+    LineData.Slot:SetPosition(pVec)
+    local sVec = LineData.sizeVec
+    sVec.X = length
+    sVec.Y = thickness
+    LineData.Slot:SetSize(sVec)
+    LineData.Widget:SetRenderAngle(angle)
+    if LineData.Widget._cachedColor ~= color then
+        LineData.Widget:SetBrushColor(color)
+        LineData.Widget._cachedColor = color
+    end
+    if not LineData.Widget._isSelfHitTestVisible then
+        LineData.Widget:SetWidgetVisibility(UEnums.ESlateVisibility.SelfHitTestInvisible)
+        LineData.Widget._isSelfHitTestVisible = true
+    end
+end
+
+function PlayerMapMarker.UpdateBoxESP(KeyStr, Character, PC, bOnScreen, charLoc)
+    if not _G.LexusConfig.Esp9_Box then
+        PlayerMapMarker.RemoveBoxESP(KeyStr)
+        return
+    end
+    if not IsValid(Character) or not IsValid(PC) or not bOnScreen then
+        PlayerMapMarker.RemoveBoxESP(KeyStr)
+        return
+    end
+    local set = PlayerMapMarker.BoxWidgets[KeyStr]
+    if not set then
+        set = PlayerMapMarker.CreateBoxWidgetSet()
+        PlayerMapMarker.BoxWidgets[KeyStr] = set
+    end
+
+    local head = PlayerMapMarker.GetBoneLocationWithFallback(Character, "head")
+    if not head then
+        PlayerMapMarker.HideBoxWidgetSet(set)
+        return
+    end
+    local bH, hx, hy = PlayerMapMarker.ProjectWorldToCanvasLocalRaw(PC, head)
+    if not bH then
+        PlayerMapMarker.HideBoxWidgetSet(set)
+        return
+    end
+
+    local fx, fy = nil, nil
+    local footL = PlayerMapMarker.GetBoneLocationWithFallback(Character, "foot_l")
+    local footR = PlayerMapMarker.GetBoneLocationWithFallback(Character, "foot_r")
+    if footL then
+        local ok, x, y = PlayerMapMarker.ProjectWorldToCanvasLocalRaw(PC, footL)
+        if ok then fx, fy = x, y end
+    end
+    if footR then
+        local ok, x, y = PlayerMapMarker.ProjectWorldToCanvasLocalRaw(PC, footR)
+        if ok and (fy == nil or y > fy) then fx, fy = x, y end
+    end
+    if fy == nil and charLoc then
+        local ok, x, y = PlayerMapMarker.ProjectWorldToCanvasLocalRaw(PC, charLoc)
+        if ok then fx, fy = x, y end
+    end
+    if fy == nil then
+        PlayerMapMarker.HideBoxWidgetSet(set)
+        return
+    end
+
+    local top = hy - 4
+    local bottom = fy + 2
+    local boxH = bottom - top
+    if boxH < 10 then
+        PlayerMapMarker.HideBoxWidgetSet(set)
+        return
+    end
+
+    local centerX = (hx + (fx or hx)) / 2
+    local boxW = boxH * 0.55
+    local armL = PlayerMapMarker.GetBoneLocationWithFallback(Character, "upperarm_l")
+    local armR = PlayerMapMarker.GetBoneLocationWithFallback(Character, "upperarm_r")
+    if armL and armR then
+        local okL, lx = PlayerMapMarker.ProjectWorldToCanvasLocalRaw(PC, armL)
+        local okR, rx = PlayerMapMarker.ProjectWorldToCanvasLocalRaw(PC, armR)
+        if okL and okR then
+            local shoulderW = math.abs(lx - rx) * 1.45
+            if shoulderW > boxW then boxW = shoulderW end
+        end
+    end
+    if boxW < 14 then boxW = 14 end
+    if boxW > 220 then boxW = 220 end
+
+    local left = centerX - boxW / 2
+    local right = centerX + boxW / 2
+    local thick = _G.LexusConfig.Esp9_BoxThickness or 1
+    if thick < 1 then thick = 1 end
+    if thick > 5 then thick = 5 end
+
+    local bVisible = PlayerMapMarker.IsPlayerVisible(PC, Character)
+    local colorIdx = bVisible and (_G.LexusConfig.Esp9_BoxColorVis or 2) or (_G.LexusConfig.Esp9_BoxColorHid or 1)
+    local color = PlayerMapMarker.GetESPColor(colorIdx, 1.0)
+
+    PlayerMapMarker.PlaceESPLine(set.Lines[1], left, top, right, top, thick, color)
+    PlayerMapMarker.PlaceESPLine(set.Lines[2], right, top, right, bottom, thick, color)
+    PlayerMapMarker.PlaceESPLine(set.Lines[3], right, bottom, left, bottom, thick, color)
+    PlayerMapMarker.PlaceESPLine(set.Lines[4], left, bottom, left, top, thick, color)
+
+    if _G.LexusConfig.Esp9_HPBar then
+        local HP = Character.Health or 0
+        local MaxHP = Character.MaxHealth or 120
+        local pct = 0
+        if HP > 0 and MaxHP > 0 then
+            pct = HP / MaxHP
+            if pct > 1 then pct = 1 end
+            if pct < 0 then pct = 0 end
+        end
+        local barW = math.max(2, thick + 1)
+        local barX = left - barW - 3
+        local barColor
+        if pct > 0.6 then
+            barColor = PlayerMapMarker.GetESPColor(2, 1.0)
+        elseif pct > 0.3 then
+            barColor = PlayerMapMarker.GetESPColor(4, 1.0)
+        else
+            barColor = PlayerMapMarker.GetESPColor(1, 1.0)
+        end
+        local bg = PlayerMapMarker.GetESPColor(6, 0.25)
+        PlayerMapMarker.PlaceESPLine(set.HPBg, barX, bottom, barX, top, barW, bg)
+        if pct > 0 then
+            local fillTop = bottom - boxH * pct
+            PlayerMapMarker.PlaceESPLine(set.HPFill, barX, bottom, barX, fillTop, barW, barColor)
+        elseif set.HPFill and set.HPFill.Widget and slua.isValid(set.HPFill.Widget) then
+            set.HPFill.Widget:SetWidgetVisibility(UEnums.ESlateVisibility.Collapsed)
+        end
+    else
+        if set.HPBg and set.HPBg.Widget and slua.isValid(set.HPBg.Widget) then
+            set.HPBg.Widget:SetWidgetVisibility(UEnums.ESlateVisibility.Collapsed)
+        end
+        if set.HPFill and set.HPFill.Widget and slua.isValid(set.HPFill.Widget) then
+            set.HPFill.Widget:SetWidgetVisibility(UEnums.ESlateVisibility.Collapsed)
+        end
+    end
+end
+
+-- ====== END BOX ESP ======
+
 function PlayerMapMarker.ClearAllESP()
     RedBoxOverlay.Stop()
     for KeyStr, Data in pairs(PlayerMapMarker.ESPWidgets) do
@@ -10448,6 +10750,7 @@ function PlayerMapMarker.ClearAllESP()
     PlayerMapMarker.ESPWidgetPtrs = {}
     PlayerMapMarker.ClearAllSnapLines()
     PlayerMapMarker.ClearAllSkeletonLines()
+    PlayerMapMarker.ClearAllBoxESP()
     if PlayerMapMarker.ESPCanvas and Game:IsValid(PlayerMapMarker.ESPCanvas) then
         pcall(function()
             local n = PlayerMapMarker.ESPCanvas:GetChildrenCount()
@@ -10473,6 +10776,8 @@ function PlayerMapMarker.UpdateESP(AllPlayers, MyLoc)
     -- Đồng bộ Config Dây và Xương
     PlayerMapMarker.bUseSnapLines = _G.LexusConfig.Esp9_Line
     PlayerMapMarker.bUseSkeleton = _G.LexusConfig.Esp9_Skeleton
+    PlayerMapMarker.SkeletonVisibleColor = PlayerMapMarker.GetESPColor(_G.LexusConfig.Esp9_SkelColorVis or 2, 0.8)
+    PlayerMapMarker.SkeletonCoverColor = PlayerMapMarker.GetESPColor(_G.LexusConfig.Esp9_SkelColorHid or 1, 0.6)
 
     if not PlayerMapMarker.InitESPCanvas() then
         return
@@ -10584,12 +10889,18 @@ function PlayerMapMarker.UpdateESP(AllPlayers, MyLoc)
                             else
                                 PlayerMapMarker.RemoveSkeletonLines(KeyStr)
                             end
+                            if _G.LexusConfig.Esp9_Box then
+                                PlayerMapMarker.UpdateBoxESP(KeyStr, Character, PC, bOnScreen, Loc)
+                            else
+                                PlayerMapMarker.RemoveBoxESP(KeyStr)
+                            end
                         else
                             local Container = Widget.Container or Widget
                             pcall(function() Container:SetWidgetVisibility(UEnums.ESlateVisibility.Collapsed) end)
                             PlayerMapMarker.UpdateESPHealth(Widget, 0)
                             PlayerMapMarker.RemoveSnapLine(KeyStr)
                             PlayerMapMarker.RemoveSkeletonLines(KeyStr)
+                            PlayerMapMarker.RemoveBoxESP(KeyStr)
                         end
                     end
                 else
@@ -10628,12 +10939,18 @@ function PlayerMapMarker.UpdateESP(AllPlayers, MyLoc)
                         else
                             PlayerMapMarker.RemoveSkeletonLines(KeyStr)
                         end
+                        if _G.LexusConfig.Esp9_Box then
+                            PlayerMapMarker.UpdateBoxESP(KeyStr, Character, PC, bOnScreen, Loc)
+                        else
+                            PlayerMapMarker.RemoveBoxESP(KeyStr)
+                        end
                     else
                         local Container = ESPData.Widget.Container or ESPData.Widget
                         pcall(function() Container:SetWidgetVisibility(UEnums.ESlateVisibility.Collapsed) end)
                         PlayerMapMarker.UpdateESPHealth(ESPData.Widget, 0)
                         PlayerMapMarker.RemoveSnapLine(KeyStr)
                         PlayerMapMarker.RemoveSkeletonLines(KeyStr)
+                        PlayerMapMarker.RemoveBoxESP(KeyStr)
                     end
                 end
             end
@@ -10644,6 +10961,7 @@ function PlayerMapMarker.UpdateESP(AllPlayers, MyLoc)
         if not SeenKeys[KeyStr] then
             PlayerMapMarker.RemoveESPWidget(Data.Widget, KeyStr)
             PlayerMapMarker.ESPWidgets[KeyStr] = nil
+            PlayerMapMarker.DestroyBoxESP(KeyStr)
         end
     end
 end
@@ -10655,6 +10973,8 @@ function PlayerMapMarker.UpdateESPLight()
     -- Đồng bộ Config Dây và Xương
     PlayerMapMarker.bUseSnapLines = _G.LexusConfig.Esp9_Line
     PlayerMapMarker.bUseSkeleton = _G.LexusConfig.Esp9_Skeleton
+    PlayerMapMarker.SkeletonVisibleColor = PlayerMapMarker.GetESPColor(_G.LexusConfig.Esp9_SkelColorVis or 2, 0.8)
+    PlayerMapMarker.SkeletonCoverColor = PlayerMapMarker.GetESPColor(_G.LexusConfig.Esp9_SkelColorHid or 1, 0.6)
     if not PlayerMapMarker.ESPCanvas or not Game:IsValid(PlayerMapMarker.ESPCanvas) then return end
     local PC = PlayerMapMarker.GetMyPlayerController()
     if not IsValid(PC) then return end
@@ -10704,9 +11024,15 @@ function PlayerMapMarker.UpdateESPLight()
                     else
                         PlayerMapMarker.RemoveSkeletonLines(KeyStr)
                     end
+                    if _G.LexusConfig.Esp9_Box then
+                        PlayerMapMarker.UpdateBoxESP(KeyStr, Character, PC, bOnScreen, Loc)
+                    else
+                        PlayerMapMarker.RemoveBoxESP(KeyStr)
+                    end
                 else
                     PlayerMapMarker.RemoveSnapLine(KeyStr)
                     PlayerMapMarker.RemoveSkeletonLines(KeyStr)
+                    PlayerMapMarker.RemoveBoxESP(KeyStr)
                 end
             end
         end
