@@ -22592,8 +22592,8 @@ tespict()
 -- CUSTOM UI MODULE
 -- ============================================================================
 -- ============================================================================
--- LEXUS CUSTOM UI  (full redesign overlay)
--- Dibangun dari primitif UMG, terpisah dari menu Settings bawaan game.
+-- LEXUS CUSTOM UI  ·  LIQUID GLASS
+-- Overlay UMG: frosted layers, specular edge, spring motion, amber accent.
 -- ============================================================================
 local LexusCustomUI = (function()
     local M = {}
@@ -22667,40 +22667,62 @@ local LexusCustomUI = (function()
         end)
         if ok and valid(w) then return w end
     end
+    local function round(widget, r)
+        if not valid(widget) then return end
+        pcall(function()
+            local b = widget.Brush
+            if not b then return end
+            b.DrawAs = 4
+            local o = b.OutlineSettings
+            if o then
+                o.CornerRadii = construct(global("FVector4") or imported("Vector4"), r, r, r, r)
+                    or {X = r, Y = r, Z = r, W = r}
+                o.Width = 0
+            end
+            widget:SetBrush(b)
+        end)
+    end
 
     local W, H = 820, 520
     local ROW_H = 44
     local RPP = 7
     local TABN = 7
 
+    -- Liquid-glass palette: cold slate, warm amber, thin specular edges.
     local COL = {
-        bg      = color(0.030, 0.038, 0.052, 0.97),
-        panel   = color(0.055, 0.068, 0.090, 0.98),
-        card    = color(0.075, 0.092, 0.118, 0.96),
-        border  = color(0.145, 0.180, 0.225, 0.95),
-        accent  = color(0.920, 0.720, 0.290, 1.00),
-        accent2 = color(0.300, 0.760, 0.720, 1.00),
-        text    = color(0.940, 0.960, 0.970, 1.00),
-        muted   = color(0.540, 0.600, 0.660, 1.00),
-        dim     = color(0.105, 0.130, 0.165, 1.00),
-        ok      = color(0.350, 0.850, 0.650, 1.00),
-        danger  = color(0.900, 0.360, 0.360, 1.00),
+        dim      = color(0.010, 0.014, 0.022, 0.42),
+        shadow   = color(0.000, 0.000, 0.000, 0.38),
+        glass    = color(0.070, 0.085, 0.115, 0.62),
+        glass2   = color(0.095, 0.115, 0.150, 0.50),
+        stroke   = color(1.000, 1.000, 1.000, 0.075),
+        highlight= color(1.000, 1.000, 1.000, 0.28),
+        accent   = color(0.960, 0.760, 0.360, 1.00),
+        accent2  = color(0.330, 0.780, 0.740, 1.00),
+        text     = color(0.960, 0.970, 0.980, 1.00),
+        muted    = color(0.600, 0.650, 0.710, 1.00),
+        faint    = color(0.400, 0.450, 0.510, 1.00),
+        idle     = color(0.120, 0.145, 0.180, 0.55),
+        tabOn    = color(1.000, 1.000, 1.000, 0.065),
+        ok       = color(0.350, 0.850, 0.650, 1.00),
+        danger   = color(0.900, 0.360, 0.360, 1.00),
     }
     local PALETTE = {
-        color(0.92, 0.22, 0.22, 1.0), -- 1 red
-        color(0.25, 0.85, 0.40, 1.0), -- 2 green
-        color(0.25, 0.55, 0.95, 1.0), -- 3 blue
-        color(0.95, 0.82, 0.25, 1.0), -- 4 yellow
-        color(0.90, 0.30, 0.85, 1.0), -- 5 magenta
-        color(0.95, 0.95, 0.95, 1.0), -- 6 white
-        color(0.25, 0.90, 0.90, 1.0), -- 7 cyan
+        color(0.94, 0.24, 0.24, 1.0),
+        color(0.26, 0.86, 0.42, 1.0),
+        color(0.26, 0.56, 0.96, 1.0),
+        color(0.96, 0.84, 0.26, 1.0),
+        color(0.90, 0.32, 0.86, 1.0),
+        color(0.96, 0.96, 0.96, 1.0),
+        color(0.26, 0.92, 0.92, 1.0),
     }
 
     local state = {
         root = nil, parent = nil, button = nil, panel = nil, content = nil,
-        tabBtns = {}, indicator = nil, status = nil, pageLabel = nil,
-        open = false, tab = 1, page = 1, search = "", rows = {}, widgets = {},
-        built = false, anim = 0, defaults = nil, tick = 0,
+        dim = nil, tabBtns = {}, tabTexts = {}, tabPill = nil, tabPillSlot = nil,
+        indicator = nil, indicatorSlot = nil, statusLabel = nil, pageLabel = nil,
+        open = false, closing = false, tab = 1, page = 1, search = "",
+        rows = {}, widgets = {}, built = false, anim = 0, tick = 0,
+        tabPos = 0, tabTarget = 0, pulses = {}, defaults = nil,
     }
 
     local function getVal(item)
@@ -22744,24 +22766,31 @@ local LexusCustomUI = (function()
         if not t then return nil end
         pcall(function() t:SetText(text) end)
         textStyle(t, size, c)
-        vis(t, member(global("UEnums"), "ESlateVisibility") and
-            member(member(global("UEnums"), "ESlateVisibility"), "SelfHitTestInvisible"))
         addWidget(parent, t, x, y, w, h, z)
         return t
     end
 
-    local function border(parent, c, x, y, w, h, z)
+    local function border(parent, c, x, y, w, h, z, r)
         local b = make("Border", parent)
         if not b then return nil end
         pcall(function() b:SetBrushColor(c) end)
+        if r and r > 0 then round(b, r) end
         local slot = addWidget(parent, b, x, y, w, h, z)
         return b, slot
     end
 
-    local function button(parent, text, size, bg, fg, x, y, w, h, z)
+    local function pulse(w)
+        if valid(w) then
+            state.pulses[#state.pulses + 1] = {w = w, t = 1}
+        end
+    end
+
+    local function button(parent, text, size, bg, fg, x, y, w, h, z, r)
         local b = make("Button", parent)
         if not b then return nil end
         pcall(function() b:SetBackgroundColor(bg) end)
+        pcall(function() b:SetRenderTransformPivot(vector(0.5, 0.5)) end)
+        if r and r > 0 then round(b, r) end
         local t = make("TextBlock", b)
         if t then
             pcall(function() t:SetText(text) end)
@@ -22776,8 +22805,26 @@ local LexusCustomUI = (function()
         if not valid(widget) then return end
         pcall(function()
             local ev = widget.OnClicked
-            if ev and ev.Add then ev:Add(fn) end
+            if ev and ev.Add then
+                ev:Add(function()
+                    pulse(widget)
+                    fn()
+                end)
+            end
         end)
+    end
+
+    -- Frosted stack: shadow, tinted glass, vertical sheen, specular hairline.
+    local function glass(parent, x, y, w, h, z, r)
+        local shadow = border(parent, COL.shadow, x + 2, y + 8, w, h, z, r)
+        local base = border(parent, COL.glass, x, y, w, h, z + 1, r)
+        local inset = math.floor((r or 0) * 0.6)
+        border(parent, color(1, 1, 1, 0.045), x + inset, y + 1, w - inset * 2, math.floor(h * 0.42), z + 2, 0)
+        border(parent, color(1, 1, 1, 0.020), x + inset, y + math.floor(h * 0.42), w - inset * 2, math.floor(h * 0.22), z + 2, 0)
+        border(parent, COL.highlight, x + inset, y, w - inset * 2, 1, z + 3, 0)
+        border(parent, COL.stroke, x + 1, y + 1, w - 2, 1, z + 3, 0)
+        border(parent, COL.stroke, x + 1, y + h - 1, w - 2, 1, z + 3, 0)
+        return base, shadow
     end
 
     local function getRoot()
@@ -22813,62 +22860,65 @@ local LexusCustomUI = (function()
         state.widgets = {}
         state.rows = {}
     end
-
     local function track(w)
         if valid(w) then state.widgets[#state.widgets + 1] = w end
     end
 
     -- ---------------- ROW RENDERERS ----------------
     local function rowHeader(content, item, y, cw)
-        local label = textBlock(content, labelOf(item), 15, COL.accent, 8, y + 10, 520, 24, 3)
+        local dot = border(content, COL.accent, 8, y + 16, 5, 5, 3, 2)
+        track(dot)
+        local label = textBlock(content, labelOf(item), 15, COL.text, 20, y + 9, 520, 26, 4)
         track(label)
-        border(content, COL.border, 8, y + ROW_H - 4, cw - 16, 1, 2)
+        border(content, color(1, 1, 1, 0.045), 8, y + ROW_H - 2, cw - 16, 1, 2, 0)
         local val = getVal(item) ~= false
         local b, t = button(content, val and "ON" or "OFF", 11,
-            val and COL.accent or COL.dim, val and COL.bg or COL.muted,
-            cw - 92, y + 8, 64, 28, 4)
+            val and COL.accent or COL.idle, val and color(0.06, 0.07, 0.09, 1) or COL.muted,
+            cw - 92, y + 8, 64, 28, 5, 14)
         track(b)
         onClick(b, function()
             local nv = not (getVal(item) ~= false)
             setVal(item, nv)
-            pcall(function() b:SetBackgroundColor(nv and COL.accent or COL.dim) end)
+            pcall(function() b:SetBackgroundColor(nv and COL.accent or COL.idle) end)
             pcall(function() t:SetText(nv and "ON" or "OFF") end)
-            textStyle(t, 11, nv and COL.bg or COL.muted)
+            textStyle(t, 11, nv and color(0.06, 0.07, 0.09, 1) or COL.muted)
         end)
     end
 
     local function rowToggle(content, item, y, cw)
         local indent = item.ExpandHandle and 26 or 8
-        local label = textBlock(content, labelOf(item), 14, COL.text, indent, y + 11, 560, 24, 3)
+        local label = textBlock(content, labelOf(item), 14, COL.text, indent, y + 11, 560, 26, 4)
         track(label)
+        border(content, color(1, 1, 1, 0.030), 8, y + ROW_H - 1, cw - 16, 1, 2, 0)
         local val = getVal(item) == true
         local b, t = button(content, val and "ON" or "OFF", 11,
-            val and COL.accent or COL.dim, val and COL.bg or COL.muted,
-            cw - 92, y + 8, 64, 28, 4)
+            val and COL.accent or COL.idle, val and color(0.06, 0.07, 0.09, 1) or COL.muted,
+            cw - 92, y + 8, 64, 28, 5, 14)
         track(b)
         onClick(b, function()
             local nv = getVal(item) ~= true
             setVal(item, nv)
-            pcall(function() b:SetBackgroundColor(nv and COL.accent or COL.dim) end)
+            pcall(function() b:SetBackgroundColor(nv and COL.accent or COL.idle) end)
             pcall(function() t:SetText(nv and "ON" or "OFF") end)
-            textStyle(t, 11, nv and COL.bg or COL.muted)
+            textStyle(t, 11, nv and color(0.06, 0.07, 0.09, 1) or COL.muted)
         end)
     end
 
     local function rowSlider(content, item, y, cw)
         local indent = item.ExpandHandle and 26 or 8
-        local label = textBlock(content, labelOf(item), 14, COL.text, indent, y + 11, 470, 24, 3)
+        local label = textBlock(content, labelOf(item), 14, COL.text, indent, y + 11, 470, 26, 4)
         track(label)
+        border(content, color(1, 1, 1, 0.030), 8, y + ROW_H - 1, cw - 16, 1, 2, 0)
         local minv = tonumber(item.MinValue) or 0
         local maxv = tonumber(item.MaxValue) or 100
         if maxv <= minv then maxv = minv + 100 end
         local step = tonumber(item.Step) or ((maxv - minv) <= 1 and 0.1 or 1)
         local val = tonumber(getVal(item)) or minv
-        local vt = textBlock(content, tostring(val), 13, COL.accent, cw - 236, y + 11, 56, 24, 4)
+        local vt = textBlock(content, tostring(val), 13, COL.accent, cw - 236, y + 11, 56, 26, 5)
         track(vt)
-        local minus, mt = button(content, "-", 16, COL.dim, COL.text, cw - 176, y + 8, 28, 28, 4)
+        local minus = button(content, "-", 16, COL.idle, COL.text, cw - 176, y + 8, 30, 28, 5, 9)
         track(minus)
-        local plus, pt = button(content, "+", 16, COL.dim, COL.text, cw - 92, y + 8, 28, 28, 4)
+        local plus = button(content, "+", 16, COL.idle, COL.text, cw - 92, y + 8, 30, 28, 5, 9)
         track(plus)
         local function apply(delta)
             local nv = val + delta * step
@@ -22885,23 +22935,27 @@ local LexusCustomUI = (function()
 
     local function rowColor(content, item, y, cw)
         local indent = item.ExpandHandle and 26 or 8
-        local label = textBlock(content, labelOf(item), 14, COL.text, indent, y + 11, 430, 24, 3)
+        local label = textBlock(content, labelOf(item), 14, COL.text, indent, y + 11, 430, 26, 4)
         track(label)
+        border(content, color(1, 1, 1, 0.030), 8, y + ROW_H - 1, cw - 16, 1, 2, 0)
         local val = tonumber(getVal(item)) or 1
-        local sel, selSlot = border(content, COL.text, cw - 262 + (val - 1) * 30 - 3, y + 7, 26, 26, 4)
+        local sel, selSlot = border(content, color(1, 1, 1, 0.85),
+            cw - 266 + (val - 1) * 30, y + 6, 26, 26, 4, 13)
         track(sel)
         for i = 1, 7 do
             local sw = make("Button", content)
             if sw then
                 pcall(function() sw:SetBackgroundColor(PALETTE[i]) end)
-                addWidget(content, sw, cw - 262 + (i - 1) * 30, y + 10, 20, 20, 5)
+                pcall(function() sw:SetRenderTransformPivot(vector(0.5, 0.5)) end)
+                round(sw, 10)
+                addWidget(content, sw, cw - 263 + (i - 1) * 30, y + 9, 20, 20, 5)
                 track(sw)
                 onClick(sw, function()
                     setVal(item, i)
                     val = i
                     pcall(function()
                         if selSlot then
-                            selSlot:SetPosition(vector((cw - 262 + (i - 1) * 30 - 3) * M.scale, (y + 7) * M.scale))
+                            selSlot:SetPosition(vector((cw - 266 + (i - 1) * 30) * M.scale, (y + 6) * M.scale))
                         end
                     end)
                 end)
@@ -22925,8 +22979,7 @@ local LexusCustomUI = (function()
         local rows = {}
 
         if state.tab == configTab then
-            local names = {"LEGIT", "RAGE", "SKIN"}
-            for i, name in ipairs(names) do
+            for _, name in ipairs({"LEGIT", "RAGE", "SKIN"}) do
                 rows[#rows + 1] = {kind = "preset", name = name}
             end
             rows[#rows + 1] = {kind = "save"}
@@ -22982,27 +23035,27 @@ local LexusCustomUI = (function()
                     rowToggle(state.content, row.item, y, cw)
                 end
             elseif row.kind == "preset" then
-                local b, t = button(state.content, row.name, 14, COL.card, COL.accent,
-                    40, y + 6, 200, 32, 4)
+                local b = button(state.content, row.name, 14, COL.glass2, COL.accent,
+                    40, y + 6, 200, 32, 4, 16)
                 track(b)
                 onClick(b, function() M.ApplyPreset(row.name) end)
             elseif row.kind == "save" then
-                local b = button(state.content, "SIMPAN CONFIG", 13, COL.accent, COL.bg,
-                    40, y + 6, 200, 32, 4)
+                local b = button(state.content, "SIMPAN CONFIG", 13, COL.accent,
+                    color(0.06, 0.07, 0.09, 1), 40, y + 6, 200, 32, 4, 16)
                 track(b)
                 onClick(b, function()
                     pcall(function() if _G.SaveModSettings then _G.SaveModSettings() end end)
                     M.SetStatus("Config disimpan")
                 end)
             elseif row.kind == "reset" then
-                local b = button(state.content, "RESET KE DEFAULT", 13, COL.danger, COL.text,
-                    260, y + 6, 200, 32, 4)
+                local b = button(state.content, "RESET KE DEFAULT", 13, COL.idle, COL.danger,
+                    260, y + 6, 200, 32, 4, 16)
                 track(b)
                 onClick(b, function() M.ResetDefaults() end)
             elseif row.kind == "info" then
                 local t = textBlock(state.content,
-                    "Profil cepat: LEGIT / RAGE / SKIN. Perubahan lain tetap tersimpan otomatis.",
-                    12, COL.muted, 40, y + 12, cw - 80, 24, 3)
+                    "Profil cepat: LEGIT / RAGE / SKIN. Perubahan lain tersimpan otomatis.",
+                    12, COL.muted, 40, y + 12, cw - 80, 26, 3)
                 track(t)
             end
         end
@@ -23010,25 +23063,19 @@ local LexusCustomUI = (function()
 
     -- ---------------- PANEL ----------------
     local function updateTabs()
+        local tw = (W - 48) / TABN
         for i, b in ipairs(state.tabBtns) do
             local active = (i == state.tab)
-            pcall(function() b:SetBackgroundColor(active and COL.card or COL.panel) end)
+            pcall(function() b:SetBackgroundColor(color(0, 0, 0, 0)) end)
+            local t = state.tabTexts[i]
+            if t then textStyle(t, 11, active and COL.text or COL.muted) end
         end
-        if valid(state.indicator) then
-            local tw = (W - 48) / TABN
-            pcall(function()
-                if state.indicatorSlot then
-                    state.indicatorSlot:SetPosition(vector((24 + (state.tab - 1) * tw) * M.scale, (76 + 36) * M.scale))
-                    state.indicatorSlot:SetSize(vector(tw * M.scale, 3 * M.scale))
-                end
-            end)
-        end
+        state.tabTarget = 24 + (state.tab - 1) * tw + 5
     end
 
     function M.SetStatus(msg)
-        state.status = tostring(msg or "")
         if valid(state.statusLabel) then
-            pcall(function() state.statusLabel:SetText(state.status) end)
+            pcall(function() state.statusLabel:SetText(tostring(msg or "")) end)
         end
     end
 
@@ -23073,6 +23120,15 @@ local LexusCustomUI = (function()
         state.root, state.parent = root, parent
         M.scale = computeScale(parent)
 
+        -- tap-outside-to-close scrim
+        local dim = make("Button", parent)
+        if dim then
+            pcall(function() dim:SetBackgroundColor(COL.dim) end)
+            addWidget(parent, dim, -900, -900, 4000, 3000, 8900)
+            onClick(dim, function() M.Hide() end)
+            state.dim = dim
+        end
+
         local panel = make("CanvasPanel", parent)
         if not panel then return false end
         state.panel = panel
@@ -23088,23 +23144,26 @@ local LexusCustomUI = (function()
             slot:SetAlignment(vector(0.5, 0.5))
             slot:SetPosition(vector(0, 0))
         end)
+        pcall(function() panel:SetRenderTransformPivot(vector(0.5, 0.5)) end)
 
-        border(panel, COL.bg, 0, 0, W, H, 1)
-        border(panel, COL.accent, 0, 0, W, 3, 2)
-        border(panel, COL.border, 0, 0, 1, H, 2)
-        border(panel, COL.border, W - 1, 0, 1, H, 2)
+        glass(panel, 0, 0, W, H, 1, 22)
 
-        textBlock(panel, "NEWBIE", 28, COL.text, 24, 12, 200, 34, 3)
-        textBlock(panel, "VIP  ·  TACTICAL PANEL", 11, COL.accent, 24, 44, 260, 20, 3)
-        textBlock(panel, "4.7.0.21783", 10, COL.muted, 24, 62, 160, 18, 3)
+        -- header
+        local dot = border(panel, COL.accent, 24, 21, 8, 8, 6, 4)
+        textBlock(panel, "NEWBIE", 30, COL.text, 40, 8, 240, 36, 6)
+        textBlock(panel, "VIP  ·  TACTICAL PANEL", 10, COL.accent, 41, 44, 260, 18, 6)
+        textBlock(panel, "4.7.0.21783", 9, COL.faint, 41, 60, 160, 16, 6)
+        border(panel, color(1, 1, 1, 0.055), 24, 78, W - 48, 1, 6, 0)
 
-        local close = button(panel, "X", 14, COL.dim, COL.text, W - 52, 18, 30, 30, 4)
+        local close = button(panel, "X", 13, COL.idle, COL.text, W - 56, 18, 32, 32, 7, 16)
         onClick(close, function() M.Hide() end)
 
+        local searchPill = border(panel, COL.glass2, W - 332, 20, 210, 30, 5, 15)
         local search = make("EditableTextBox", panel)
         if search then
             pcall(function() search:SetHintText("Cari fitur...") end)
-            addWidget(panel, search, W - 320, 20, 190, 28, 4)
+            pcall(function() search:SetBackgroundColor(color(0, 0, 0, 0)) end)
+            addWidget(panel, search, W - 324, 23, 194, 24, 6)
             pcall(function()
                 local ev = search.OnTextChanged
                 if ev and ev.Add then
@@ -23117,16 +23176,20 @@ local LexusCustomUI = (function()
             end)
         end
 
-        -- tab bar
+        -- tabs
         local tw = (W - 48) / TABN
         local labels = {}
         local cats = _G.LexusMenuCategories or {}
         for i, cat in ipairs(cats) do labels[i] = cat.Label or cat.Key end
         labels[TABN] = "CONFIG"
+        state.tabPill, state.tabPillSlot = border(panel, COL.tabOn,
+            24 + 5, 86, tw - 10, 30, 4, 15)
         for i = 1, TABN do
-            local b, t = button(panel, labels[i] or ("T" .. i), 11, COL.panel, COL.muted,
-                24 + (i - 1) * tw, 76, tw - 4, 36, 3)
+            local b, t = button(panel, labels[i] or ("T" .. i), 11,
+                color(0, 0, 0, 0), COL.muted,
+                24 + (i - 1) * tw, 86, tw - 4, 30, 6)
             state.tabBtns[i] = b
+            state.tabTexts[i] = t
             onClick(b, function()
                 state.tab = i
                 state.page = 1
@@ -23134,27 +23197,31 @@ local LexusCustomUI = (function()
                 renderRows()
             end)
         end
-        state.indicator, state.indicatorSlot = border(panel, COL.accent, 24, 112, tw - 4, 3, 4)
+        state.indicator, state.indicatorSlot = border(panel, COL.accent,
+            24 + 10, 118, tw - 20, 2, 6, 1)
 
         local content = make("CanvasPanel", panel)
         if content then
-            addWidget(panel, content, 20, 120, W - 40, H - 176, 3)
+            addWidget(panel, content, 20, 130, W - 40, 320, 5)
             state.content = content
         end
 
-        state.statusLabel = textBlock(panel, "", 11, COL.muted, 24, H - 40, 320, 22, 3)
-        local save = button(panel, "SAVE", 12, COL.accent, COL.bg, W - 300, H - 44, 80, 28, 4)
+        -- footer
+        border(panel, color(1, 1, 1, 0.055), 24, H - 58, W - 48, 1, 6, 0)
+        state.statusLabel = textBlock(panel, "", 11, COL.muted, 24, H - 42, 320, 22, 6)
+        local save = button(panel, "SAVE", 11, COL.accent, color(0.06, 0.07, 0.09, 1),
+            W - 300, H - 46, 80, 30, 7, 15)
         onClick(save, function()
             pcall(function() if _G.SaveModSettings then _G.SaveModSettings() end end)
             M.SetStatus("Config disimpan")
         end)
-        local prev = button(panel, "<", 14, COL.dim, COL.text, W - 204, H - 44, 52, 28, 4)
+        local prev = button(panel, "<", 13, COL.idle, COL.text, W - 204, H - 46, 52, 30, 7, 15)
         onClick(prev, function()
             state.page = math.max(1, state.page - 1)
             renderRows()
         end)
-        state.pageLabel = textBlock(panel, "1 / 1", 11, COL.muted, W - 146, H - 38, 60, 22, 3)
-        local nxt = button(panel, ">", 14, COL.dim, COL.text, W - 84, H - 44, 52, 28, 4)
+        state.pageLabel = textBlock(panel, "1 / 1", 11, COL.muted, W - 146, H - 40, 60, 22, 6)
+        local nxt = button(panel, ">", 13, COL.idle, COL.text, W - 84, H - 46, 52, 30, 7, 15)
         onClick(nxt, function()
             state.page = state.page + 1
             renderRows()
@@ -23162,7 +23229,13 @@ local LexusCustomUI = (function()
 
         state.built = true
         state.anim = 0
+        state.tabPos = 24 + 5
+        pcall(function() panel:SetRenderOpacity(0) end)
+        pcall(function() panel:SetRenderScale(vector(0.96, 0.96)) end)
         vis(panel, member(member(global("UEnums"), "ESlateVisibility"), "Collapsed"))
+        if state.dim then
+            vis(state.dim, member(member(global("UEnums"), "ESlateVisibility"), "Collapsed"))
+        end
         return true
     end
 
@@ -23173,17 +23246,20 @@ local LexusCustomUI = (function()
         M.scale = computeScale(parent)
         local b = make("Button", parent)
         if not b then return false end
-        pcall(function() b:SetBackgroundColor(COL.accent) end)
+        pcall(function() b:SetBackgroundColor(COL.glass2) end)
+        pcall(function() b:SetRenderTransformPivot(vector(0.5, 0.5)) end)
+        round(b, 27)
+        local ring = border(b, COL.accent, 2, 2, 50, 50, 1, 25)
         local t = make("TextBlock", b)
         if t then
             pcall(function() t:SetText("N") end)
-            textStyle(t, 20, COL.bg)
+            textStyle(t, 20, COL.text)
             pcall(function() b:AddChild(t) end)
         end
         local slot = parent:AddChildToCanvas(b)
         if not slot then return false end
         pcall(function() slot:SetAutoSize(false) end)
-        pcall(function() slot:SetSize(vector(52 * M.scale, 52 * M.scale)) end)
+        pcall(function() slot:SetSize(vector(54 * M.scale, 54 * M.scale)) end)
         pcall(function() slot:SetZOrder(9500) end)
         pcall(function()
             local a = slot:GetAnchors()
@@ -23203,13 +23279,17 @@ local LexusCustomUI = (function()
         end
         state.open = not state.open
         if state.open then
+            state.closing = false
             state.anim = 0
             vis(state.panel, member(member(global("UEnums"), "ESlateVisibility"), "Visible"))
+            if state.dim then
+                vis(state.dim, member(member(global("UEnums"), "ESlateVisibility"), "Visible"))
+            end
             updateTabs()
             renderRows()
             M.SetStatus("")
         else
-            vis(state.panel, member(member(global("UEnums"), "ESlateVisibility"), "Collapsed"))
+            state.closing = true
         end
     end
     function M.Hide()
@@ -23223,14 +23303,57 @@ local LexusCustomUI = (function()
             state.button = nil
             state.panel = nil
             state.content = nil
+            state.dim = nil
             state.tabBtns = {}
+            state.tabTexts = {}
             if state.tick % 30 == 0 then buildButton() end
         elseif not state.built and state.tick % 30 == 0 then
             buildPanel()
         end
+
         if state.open and valid(state.panel) then
-            state.anim = math.min(1, state.anim + 0.12)
-            pcall(function() state.panel:SetRenderOpacity(state.anim) end)
+            state.anim = math.min(1, state.anim + 0.11)
+            local e = 1 - (1 - state.anim) ^ 3
+            pcall(function() state.panel:SetRenderOpacity(e) end)
+            pcall(function() state.panel:SetRenderScale(vector(0.96 + 0.04 * e, 0.96 + 0.04 * e)) end)
+        elseif state.closing and valid(state.panel) then
+            state.anim = math.max(0, state.anim - 0.16)
+            local e = 1 - (1 - state.anim) ^ 3
+            pcall(function() state.panel:SetRenderOpacity(e) end)
+            pcall(function() state.panel:SetRenderScale(vector(0.96 + 0.04 * e, 0.96 + 0.04 * e)) end)
+            if state.anim <= 0 then
+                state.closing = false
+                vis(state.panel, member(member(global("UEnums"), "ESlateVisibility"), "Collapsed"))
+                if state.dim then
+                    vis(state.dim, member(member(global("UEnums"), "ESlateVisibility"), "Collapsed"))
+                end
+            end
+        end
+
+        if valid(state.indicatorSlot) then
+            state.tabPos = state.tabPos + (state.tabTarget - state.tabPos) * 0.22
+            local tw = (W - 48) / TABN
+            pcall(function()
+                state.indicatorSlot:SetPosition(vector(state.tabPos * M.scale, 118 * M.scale))
+                state.indicatorSlot:SetSize(vector((tw - 20) * M.scale, 2 * M.scale))
+            end)
+            if valid(state.tabPillSlot) then
+                pcall(function()
+                    state.tabPillSlot:SetPosition(vector(state.tabPos * M.scale, 86 * M.scale))
+                end)
+            end
+        end
+
+        for i = #state.pulses, 1, -1 do
+            local p = state.pulses[i]
+            p.t = p.t - 0.12
+            if p.t <= 0 or not valid(p.w) then
+                if valid(p.w) then pcall(function() p.w:SetRenderScale(vector(1, 1)) end) end
+                table.remove(state.pulses, i)
+            else
+                local s = 1 - 0.05 * p.t
+                pcall(function() p.w:SetRenderScale(vector(s, s)) end)
+            end
         end
     end
 
