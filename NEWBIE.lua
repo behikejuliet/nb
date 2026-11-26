@@ -22689,23 +22689,30 @@ local LexusCustomUI = (function()
     local RPP = 7
     local TABN = 7
 
-    -- Liquid-glass palette: cold slate, warm amber, thin specular edges.
+    -- Titanium liquid glass: graphite glass, brushed-silver rim, Apple red accent.
     local COL = {
-        dim      = color(0.010, 0.014, 0.022, 0.42),
-        shadow   = color(0.000, 0.000, 0.000, 0.38),
-        glass    = color(0.070, 0.085, 0.115, 0.62),
-        glass2   = color(0.095, 0.115, 0.150, 0.50),
-        stroke   = color(1.000, 1.000, 1.000, 0.075),
-        highlight= color(1.000, 1.000, 1.000, 0.28),
-        accent   = color(0.960, 0.760, 0.360, 1.00),
-        accent2  = color(0.330, 0.780, 0.740, 1.00),
-        text     = color(0.960, 0.970, 0.980, 1.00),
-        muted    = color(0.600, 0.650, 0.710, 1.00),
-        faint    = color(0.400, 0.450, 0.510, 1.00),
-        idle     = color(0.120, 0.145, 0.180, 0.55),
-        tabOn    = color(1.000, 1.000, 1.000, 0.065),
+        dim      = color(0.004, 0.005, 0.007, 0.56),
+        shadow   = color(0.000, 0.000, 0.000, 0.46),
+        glass    = color(0.072, 0.077, 0.086, 0.60),
+        glass2   = color(0.118, 0.126, 0.140, 0.48),
+        stroke   = color(1.000, 1.000, 1.000, 0.060),
+        highlight= color(1.000, 1.000, 1.000, 0.34),
+        accent   = color(0.840, 0.860, 0.890, 1.00),  -- titanium light
+        accent2  = color(1.000, 0.231, 0.188, 1.00),  -- Apple red
+        text     = color(0.960, 0.965, 0.975, 1.00),
+        muted    = color(0.620, 0.640, 0.670, 1.00),
+        faint    = color(0.400, 0.420, 0.450, 1.00),
+        idle     = color(0.150, 0.160, 0.175, 0.55),
+        tabOn    = color(1.000, 0.231, 0.188, 0.10),  -- red-tinted glass pill
         ok       = color(0.350, 0.850, 0.650, 1.00),
-        danger   = color(0.900, 0.360, 0.360, 1.00),
+        danger   = color(1.000, 0.231, 0.188, 1.00),
+        titan1   = color(0.880, 0.900, 0.930, 1.00),
+        titan2   = color(0.560, 0.580, 0.620, 1.00),
+        titan3   = color(0.260, 0.275, 0.300, 1.00),
+        red      = color(1.000, 0.231, 0.188, 1.00),
+        redDeep  = color(0.720, 0.090, 0.070, 1.00),
+        redGlow  = color(1.000, 0.231, 0.188, 0.22),
+        redSoft  = color(1.000, 0.231, 0.188, 0.12),
     }
     local PALETTE = {
         color(0.94, 0.24, 0.24, 1.0),
@@ -22845,9 +22852,12 @@ local LexusCustomUI = (function()
         local inset = math.floor((r or 0) * 0.6)
         border(parent, color(1, 1, 1, 0.045), x + inset, y + 1, w - inset * 2, math.floor(h * 0.42), z + 2, 0)
         border(parent, color(1, 1, 1, 0.020), x + inset, y + math.floor(h * 0.42), w - inset * 2, math.floor(h * 0.22), z + 2, 0)
-        border(parent, COL.highlight, x + inset, y, w - inset * 2, 1, z + 3, 0)
-        border(parent, COL.stroke, x + 1, y + 1, w - 2, 1, z + 3, 0)
-        border(parent, COL.stroke, x + 1, y + h - 1, w - 2, 1, z + 3, 0)
+        -- brushed titanium rim: light top, mid sides, dark bottom
+        border(parent, color(0.88, 0.90, 0.93, 0.55), x + inset, y, w - inset * 2, 1, z + 3, 0)
+        border(parent, color(0.56, 0.58, 0.62, 0.28), x + 1, y + inset, 1, h - inset * 2, z + 3, 0)
+        border(parent, color(0.56, 0.58, 0.62, 0.28), x + w - 2, y + inset, 1, h - inset * 2, z + 3, 0)
+        border(parent, color(0.26, 0.275, 0.30, 0.55), x + inset, y + h - 1, w - inset * 2, 1, z + 3, 0)
+        border(parent, color(1, 1, 1, 0.10), x + inset, y + 1, w - inset * 2, 1, z + 3, 0)
         return base, shadow
     end
 
@@ -22890,22 +22900,22 @@ local LexusCustomUI = (function()
 
     -- ---------------- ROW RENDERERS ----------------
     local function rowHeader(content, item, y, cw)
-        local dot = border(content, COL.accent, 8, y + 16, 5, 5, 3, 2)
+        local dot = border(content, COL.red, 8, y + 16, 5, 5, 3, 2)
         track(dot)
         local label = textBlock(content, labelOf(item), 15, COL.text, 20, y + 9, 520, 26, 4)
         track(label)
         border(content, color(1, 1, 1, 0.045), 8, y + ROW_H - 2, cw - 16, 1, 2, 0)
         local val = getVal(item) ~= false
         local b, t, bgB = button(content, val and "ON" or "OFF", 11,
-            val and COL.accent or COL.idle, val and color(0.06, 0.07, 0.09, 1) or COL.muted,
+            val and COL.red or COL.idle, val and COL.text or COL.muted,
             cw - 92, y + 8, 64, 28, 5, 14)
         track(b)
         onClick(b, function()
             local nv = not (getVal(item) ~= false)
             setVal(item, nv)
-            pcall(function() bgB:SetBrushColor(nv and COL.accent or COL.idle) end)
+            pcall(function() bgB:SetBrushColor(nv and COL.red or COL.idle) end)
             pcall(function() t:SetText(nv and "ON" or "OFF") end)
-            textStyle(t, 11, nv and color(0.06, 0.07, 0.09, 1) or COL.muted)
+            textStyle(t, 11, nv and COL.text or COL.muted)
         end)
     end
 
@@ -22916,15 +22926,15 @@ local LexusCustomUI = (function()
         border(content, color(1, 1, 1, 0.030), 8, y + ROW_H - 1, cw - 16, 1, 2, 0)
         local val = getVal(item) == true
         local b, t, bgB = button(content, val and "ON" or "OFF", 11,
-            val and COL.accent or COL.idle, val and color(0.06, 0.07, 0.09, 1) or COL.muted,
+            val and COL.red or COL.idle, val and COL.text or COL.muted,
             cw - 92, y + 8, 64, 28, 5, 14)
         track(b)
         onClick(b, function()
             local nv = getVal(item) ~= true
             setVal(item, nv)
-            pcall(function() bgB:SetBrushColor(nv and COL.accent or COL.idle) end)
+            pcall(function() bgB:SetBrushColor(nv and COL.red or COL.idle) end)
             pcall(function() t:SetText(nv and "ON" or "OFF") end)
-            textStyle(t, 11, nv and color(0.06, 0.07, 0.09, 1) or COL.muted)
+            textStyle(t, 11, nv and COL.text or COL.muted)
         end)
     end
 
@@ -22938,7 +22948,7 @@ local LexusCustomUI = (function()
         if maxv <= minv then maxv = minv + 100 end
         local step = tonumber(item.Step) or ((maxv - minv) <= 1 and 0.1 or 1)
         local val = tonumber(getVal(item)) or minv
-        local vt = textBlock(content, tostring(val), 13, COL.accent, cw - 236, y + 11, 56, 26, 5)
+        local vt = textBlock(content, tostring(val), 13, COL.titan1, cw - 236, y + 11, 56, 26, 5)
         track(vt)
         local minus = button(content, "-", 16, COL.idle, COL.text, cw - 176, y + 8, 30, 28, 5, 9)
         track(minus)
@@ -22963,7 +22973,7 @@ local LexusCustomUI = (function()
         track(label)
         border(content, color(1, 1, 1, 0.030), 8, y + ROW_H - 1, cw - 16, 1, 2, 0)
         local val = tonumber(getVal(item)) or 1
-        local sel, selSlot = border(content, color(1, 1, 1, 0.85),
+        local sel, selSlot = border(content, COL.red,
             cw - 266 + (val - 1) * 30, y + 6, 26, 26, 4, 13)
         track(sel)
         for i = 1, 7 do
@@ -23060,13 +23070,13 @@ local LexusCustomUI = (function()
                     rowToggle(state.content, row.item, y, cw)
                 end
             elseif row.kind == "preset" then
-                local b = button(state.content, row.name, 14, COL.glass2, COL.accent,
+                local b = button(state.content, row.name, 14, COL.glass2, COL.red,
                     40, y + 6, 200, 32, 4, 16)
                 track(b)
                 onClick(b, function() M.ApplyPreset(row.name) end)
             elseif row.kind == "save" then
-                local b = button(state.content, "SIMPAN CONFIG", 13, COL.accent,
-                    color(0.06, 0.07, 0.09, 1), 40, y + 6, 200, 32, 4, 16)
+                local b = button(state.content, "SIMPAN CONFIG", 13, COL.red,
+                    COL.text, 40, y + 6, 200, 32, 4, 16)
                 track(b)
                 onClick(b, function()
                     pcall(function() if _G.SaveModSettings then _G.SaveModSettings() end end)
@@ -23174,9 +23184,9 @@ local LexusCustomUI = (function()
         glass(panel, 0, 0, W, H, 1, 22)
 
         -- header
-        local dot = border(panel, COL.accent, 24, 21, 8, 8, 6, 4)
+        local dot = border(panel, COL.red, 24, 21, 8, 8, 6, 4)
         textBlock(panel, "NEWBIE", 30, COL.text, 40, 8, 240, 36, 6)
-        textBlock(panel, "VIP  ·  TACTICAL PANEL", 10, COL.accent, 41, 44, 260, 18, 6)
+        textBlock(panel, "VIP  ·  TACTICAL PANEL", 10, COL.titan2, 41, 44, 260, 18, 6)
         textBlock(panel, "4.7.0.21783", 9, COL.faint, 41, 60, 160, 16, 6)
         border(panel, color(1, 1, 1, 0.055), 24, 78, W - 48, 1, 6, 0)
 
@@ -23222,8 +23232,10 @@ local LexusCustomUI = (function()
                 renderRows()
             end)
         end
-        state.indicator, state.indicatorSlot = border(panel, COL.accent,
+        state.indicator, state.indicatorSlot = border(panel, COL.red,
             24 + 10, 118, tw - 20, 2, 6, 1)
+        state.glow, state.glowSlot = border(panel, COL.redGlow,
+            24 + 10, 120, tw - 20, 4, 5, 2)
 
         local content = make("CanvasPanel", panel)
         if content then
@@ -23234,7 +23246,7 @@ local LexusCustomUI = (function()
         -- footer
         border(panel, color(1, 1, 1, 0.055), 24, H - 58, W - 48, 1, 6, 0)
         state.statusLabel = textBlock(panel, "", 11, COL.muted, 24, H - 42, 320, 22, 6)
-        local save = button(panel, "SAVE", 11, COL.accent, color(0.06, 0.07, 0.09, 1),
+        local save = button(panel, "SAVE", 11, COL.red, COL.text,
             W - 300, H - 46, 80, 30, 7, 15)
         onClick(save, function()
             pcall(function() if _G.SaveModSettings then _G.SaveModSettings() end end)
@@ -23272,7 +23284,7 @@ local LexusCustomUI = (function()
 
         local rim = make("Border", parent)
         if rim then
-            pcall(function() rim:SetBrushColor(COL.accent) end)
+            pcall(function() rim:SetBrushColor(COL.titan1) end)
             round(rim, 27)
             placeAnchored(parent, rim, 54, 9500, 1, 0.5, -18, 0)
         end
@@ -23281,6 +23293,12 @@ local LexusCustomUI = (function()
             pcall(function() glassBtn:SetBrushColor(COL.glass2) end)
             round(glassBtn, 25)
             placeAnchored(parent, glassBtn, 50, 9501, 1, 0.5, -20, 0)
+        end
+        local dot = make("Border", parent)
+        if dot then
+            pcall(function() dot:SetBrushColor(COL.red) end)
+            round(dot, 4)
+            placeAnchored(parent, dot, 8, 9503, 1, 0.5, -23, -19)
         end
         local b = make("Button", parent)
         if not b then return false end
@@ -23361,6 +23379,12 @@ local LexusCustomUI = (function()
                 state.indicatorSlot:SetPosition(vector(state.tabPos * M.scale, 118 * M.scale))
                 state.indicatorSlot:SetSize(vector((tw - 20) * M.scale, 2 * M.scale))
             end)
+            if valid(state.glowSlot) then
+                pcall(function()
+                    state.glowSlot:SetPosition(vector(state.tabPos * M.scale, 120 * M.scale))
+                    state.glowSlot:SetSize(vector((tw - 20) * M.scale, 4 * M.scale))
+                end)
+            end
             if valid(state.tabPillSlot) then
                 pcall(function()
                     state.tabPillSlot:SetPosition(vector(state.tabPos * M.scale, 86 * M.scale))
