@@ -5586,6 +5586,16 @@ function _G.InitModMenuTab()
             }
         }
 
+        _G.LexusMenuCategories = {
+            {Key = "Cat_ESP", Label = "VISUAL", Stack = StackESP},
+            {Key = "Cat_ESPV2", Label = "ESP", Stack = StackESPV2},
+            {Key = "Cat_Aimbot", Label = "AIM", Stack = StackAimbot},
+            {Key = "Cat_AimbotV2", Label = "AIM+", Stack = StackAimbotV2},
+            {Key = "Cat_Combat", Label = "COMBAT", Stack = StackCombat},
+            {Key = "Cat_Skin", Label = "SKIN", Stack = StackSkin},
+        }
+        _G.LexusAliasMap = AliasMap
+
         -- Urutan paling bawah: append tanpa index 1
         table.insert(SettingCatalog, SettingPageDefine.ModMenu)
     end
@@ -11293,6 +11303,7 @@ local function MainLoop()
     local okData, GameplayData = pcall(require, "GameLua.GameCore.Data.GameplayData")
     if not okData or not GameplayData then return end
     local pc = GameplayData.GetPlayerController()
+    pcall(function() if _G.LexusCustomMenu_Tick then _G.LexusCustomMenu_Tick() end end)
     local localPlayer = nil
     if Valid(pc) then localPlayer = pc:GetPlayerCharacterSafety() end
 
@@ -22576,3 +22587,666 @@ tespict()
 -- ==============================================================================
 -- ================= KẾT THÚC LOGIC MOD EMOTE ===================================
 -- ==============================================================================
+
+-- ============================================================================
+-- CUSTOM UI MODULE
+-- ============================================================================
+-- ============================================================================
+-- LEXUS CUSTOM UI  (full redesign overlay)
+-- Dibangun dari primitif UMG, terpisah dari menu Settings bawaan game.
+-- ============================================================================
+local LexusCustomUI = (function()
+    local M = {}
+    local env = _G
+
+    local function global(n)
+        local ok, v = pcall(function() return env[n] end)
+        if ok then return v end
+    end
+    local function member(o, k)
+        if o == nil then return nil end
+        local ok, v = pcall(function() return o[k] end)
+        if ok then return v end
+    end
+    local function valid(o)
+        if o == nil then return false end
+        local check = member(global("slua"), "isValid")
+        if type(check) == "function" then
+            local ok, r = pcall(check, o)
+            if ok and r == true then return true end
+        end
+        local g = global("Game")
+        local fb = member(g, "IsValid")
+        if type(fb) == "function" then
+            local ok, r = pcall(fb, g, o)
+            return ok and r == true
+        end
+        return false
+    end
+    local function imported(n)
+        local loader = global("import")
+        if type(loader) ~= "function" then return nil end
+        local ok, r = pcall(loader, n)
+        if ok then return r end
+    end
+    local function construct(c, ...)
+        if c == nil then return nil end
+        local ok, r = pcall(c, ...)
+        if ok then return r end
+    end
+    local function vector(x, y)
+        return construct(global("FVector2D") or imported("Vector2D"), x, y) or {X = x, Y = y}
+    end
+    local function color(r, g, b, a)
+        return construct(global("FLinearColor") or imported("LinearColor"), r, g, b, a)
+            or {R = r, G = g, B = b, A = a}
+    end
+    local function vis(w, v)
+        local setter = member(w, "SetWidgetVisibility") or member(w, "SetVisibility")
+        if type(setter) == "function" then pcall(setter, w, v) end
+    end
+    local function textStyle(w, size, c)
+        pcall(function()
+            local f = w.Font
+            if f then
+                f.Size = math.max(1, math.floor(size * (M.scale or 1) + 0.5))
+                local ok = pcall(function() w.Font = f end)
+                if not ok then w:SetFont(f) end
+            end
+        end)
+        pcall(function()
+            local slate = construct(imported("SlateColor"), c)
+            if slate then w:SetColorAndOpacity(slate) end
+        end)
+    end
+    local function make(class, outer)
+        local game = global("CGame")
+        if not game or not valid(outer) then return nil end
+        local ok, w = pcall(function()
+            return game:NewObjectFromPath("/Script/UMG." .. class, outer)
+        end)
+        if ok and valid(w) then return w end
+    end
+
+    local W, H = 820, 520
+    local ROW_H = 44
+    local RPP = 7
+    local TABN = 7
+
+    local COL = {
+        bg      = color(0.030, 0.038, 0.052, 0.97),
+        panel   = color(0.055, 0.068, 0.090, 0.98),
+        card    = color(0.075, 0.092, 0.118, 0.96),
+        border  = color(0.145, 0.180, 0.225, 0.95),
+        accent  = color(0.920, 0.720, 0.290, 1.00),
+        accent2 = color(0.300, 0.760, 0.720, 1.00),
+        text    = color(0.940, 0.960, 0.970, 1.00),
+        muted   = color(0.540, 0.600, 0.660, 1.00),
+        dim     = color(0.105, 0.130, 0.165, 1.00),
+        ok      = color(0.350, 0.850, 0.650, 1.00),
+        danger  = color(0.900, 0.360, 0.360, 1.00),
+    }
+    local PALETTE = {
+        color(0.92, 0.22, 0.22, 1.0), -- 1 red
+        color(0.25, 0.85, 0.40, 1.0), -- 2 green
+        color(0.25, 0.55, 0.95, 1.0), -- 3 blue
+        color(0.95, 0.82, 0.25, 1.0), -- 4 yellow
+        color(0.90, 0.30, 0.85, 1.0), -- 5 magenta
+        color(0.95, 0.95, 0.95, 1.0), -- 6 white
+        color(0.25, 0.90, 0.90, 1.0), -- 7 cyan
+    }
+
+    local state = {
+        root = nil, parent = nil, button = nil, panel = nil, content = nil,
+        tabBtns = {}, indicator = nil, status = nil, pageLabel = nil,
+        open = false, tab = 1, page = 1, search = "", rows = {}, widgets = {},
+        built = false, anim = 0, defaults = nil, tick = 0,
+    }
+
+    local function getVal(item)
+        if item == nil or type(item.GetFunc) ~= "function" then return nil end
+        local ok, v = pcall(item.GetFunc)
+        if ok then return v end
+    end
+    local function setVal(item, v)
+        if item == nil or type(item.SetFunc) ~= "function" then return false end
+        local ok = pcall(item.SetFunc, nil, v)
+        if ok then
+            pcall(function() if _G.SaveModSettings then _G.SaveModSettings() end end)
+            return true
+        end
+        return false
+    end
+    local function labelOf(item)
+        local t = item and item.Text
+        if type(t) == "string" then return t end
+        if type(t) == "number" then return tostring(t) end
+        return "?"
+    end
+    local function isHeader(item)
+        local am = _G.LexusAliasMap
+        return am ~= nil and item ~= nil and item.UI == am.TitleSwitcher
+    end
+
+    local function addWidget(parent, widget, x, y, w, h, z)
+        if not valid(parent) or not valid(widget) then return nil end
+        local slot = parent:AddChildToCanvas(widget)
+        if not slot then return nil end
+        pcall(function() slot:SetAutoSize(false) end)
+        pcall(function() slot:SetPosition(vector(x * M.scale, y * M.scale)) end)
+        pcall(function() slot:SetSize(vector(w * M.scale, h * M.scale)) end)
+        pcall(function() slot:SetZOrder(z or 1) end)
+        return slot
+    end
+
+    local function textBlock(parent, text, size, c, x, y, w, h, z)
+        local t = make("TextBlock", parent)
+        if not t then return nil end
+        pcall(function() t:SetText(text) end)
+        textStyle(t, size, c)
+        vis(t, member(global("UEnums"), "ESlateVisibility") and
+            member(member(global("UEnums"), "ESlateVisibility"), "SelfHitTestInvisible"))
+        addWidget(parent, t, x, y, w, h, z)
+        return t
+    end
+
+    local function border(parent, c, x, y, w, h, z)
+        local b = make("Border", parent)
+        if not b then return nil end
+        pcall(function() b:SetBrushColor(c) end)
+        local slot = addWidget(parent, b, x, y, w, h, z)
+        return b, slot
+    end
+
+    local function button(parent, text, size, bg, fg, x, y, w, h, z)
+        local b = make("Button", parent)
+        if not b then return nil end
+        pcall(function() b:SetBackgroundColor(bg) end)
+        local t = make("TextBlock", b)
+        if t then
+            pcall(function() t:SetText(text) end)
+            textStyle(t, size, fg)
+            pcall(function() b:AddChild(t) end)
+        end
+        addWidget(parent, b, x, y, w, h, z)
+        return b, t
+    end
+
+    local function onClick(widget, fn)
+        if not valid(widget) then return end
+        pcall(function()
+            local ev = widget.OnClicked
+            if ev and ev.Add then ev:Add(fn) end
+        end)
+    end
+
+    local function getRoot()
+        local okTools, uiTools = pcall(require, "GameLua.Mod.BaseMod.Common.UI.InGameUITools")
+        if not okTools or not uiTools then return nil, nil end
+        local getRoot = member(uiTools, "GetMainControlBaseUI")
+        if type(getRoot) ~= "function" then return nil, nil end
+        local ok, root = pcall(getRoot)
+        if not ok or not valid(root) then return nil, nil end
+        local parent = member(root, "CanvasPanel_0") or member(root, "CanvasPanel_42")
+        if not valid(parent) then return nil, nil end
+        return root, parent
+    end
+
+    local function computeScale(parent)
+        local s = 1
+        pcall(function()
+            local geo = parent:GetCachedGeometry()
+            local size = geo:GetLocalSize()
+            local w, h = size.X, size.Y
+            if type(w) == "number" and type(h) == "number" and w > 32 and h > 32 then
+                s = math.min(1, (w - 24) / W, (h - 24) / H)
+                s = math.max(0.55, s)
+            end
+        end)
+        return s
+    end
+
+    local function clearRows()
+        for _, w in ipairs(state.widgets) do
+            pcall(function() w:RemoveFromParent() end)
+        end
+        state.widgets = {}
+        state.rows = {}
+    end
+
+    local function track(w)
+        if valid(w) then state.widgets[#state.widgets + 1] = w end
+    end
+
+    -- ---------------- ROW RENDERERS ----------------
+    local function rowHeader(content, item, y, cw)
+        local label = textBlock(content, labelOf(item), 15, COL.accent, 8, y + 10, 520, 24, 3)
+        track(label)
+        border(content, COL.border, 8, y + ROW_H - 4, cw - 16, 1, 2)
+        local val = getVal(item) ~= false
+        local b, t = button(content, val and "ON" or "OFF", 11,
+            val and COL.accent or COL.dim, val and COL.bg or COL.muted,
+            cw - 92, y + 8, 64, 28, 4)
+        track(b)
+        onClick(b, function()
+            local nv = not (getVal(item) ~= false)
+            setVal(item, nv)
+            pcall(function() b:SetBackgroundColor(nv and COL.accent or COL.dim) end)
+            pcall(function() t:SetText(nv and "ON" or "OFF") end)
+            textStyle(t, 11, nv and COL.bg or COL.muted)
+        end)
+    end
+
+    local function rowToggle(content, item, y, cw)
+        local indent = item.ExpandHandle and 26 or 8
+        local label = textBlock(content, labelOf(item), 14, COL.text, indent, y + 11, 560, 24, 3)
+        track(label)
+        local val = getVal(item) == true
+        local b, t = button(content, val and "ON" or "OFF", 11,
+            val and COL.accent or COL.dim, val and COL.bg or COL.muted,
+            cw - 92, y + 8, 64, 28, 4)
+        track(b)
+        onClick(b, function()
+            local nv = getVal(item) ~= true
+            setVal(item, nv)
+            pcall(function() b:SetBackgroundColor(nv and COL.accent or COL.dim) end)
+            pcall(function() t:SetText(nv and "ON" or "OFF") end)
+            textStyle(t, 11, nv and COL.bg or COL.muted)
+        end)
+    end
+
+    local function rowSlider(content, item, y, cw)
+        local indent = item.ExpandHandle and 26 or 8
+        local label = textBlock(content, labelOf(item), 14, COL.text, indent, y + 11, 470, 24, 3)
+        track(label)
+        local minv = tonumber(item.MinValue) or 0
+        local maxv = tonumber(item.MaxValue) or 100
+        if maxv <= minv then maxv = minv + 100 end
+        local step = tonumber(item.Step) or ((maxv - minv) <= 1 and 0.1 or 1)
+        local val = tonumber(getVal(item)) or minv
+        local vt = textBlock(content, tostring(val), 13, COL.accent, cw - 236, y + 11, 56, 24, 4)
+        track(vt)
+        local minus, mt = button(content, "-", 16, COL.dim, COL.text, cw - 176, y + 8, 28, 28, 4)
+        track(minus)
+        local plus, pt = button(content, "+", 16, COL.dim, COL.text, cw - 92, y + 8, 28, 28, 4)
+        track(plus)
+        local function apply(delta)
+            local nv = val + delta * step
+            if nv < minv then nv = minv end
+            if nv > maxv then nv = maxv end
+            if step >= 1 then nv = math.floor(nv + 0.5) else nv = math.floor(nv * 10 + 0.5) / 10 end
+            val = nv
+            setVal(item, nv)
+            pcall(function() vt:SetText(tostring(nv)) end)
+        end
+        onClick(minus, function() apply(-1) end)
+        onClick(plus, function() apply(1) end)
+    end
+
+    local function rowColor(content, item, y, cw)
+        local indent = item.ExpandHandle and 26 or 8
+        local label = textBlock(content, labelOf(item), 14, COL.text, indent, y + 11, 430, 24, 3)
+        track(label)
+        local val = tonumber(getVal(item)) or 1
+        local sel, selSlot = border(content, COL.text, cw - 262 + (val - 1) * 30 - 3, y + 7, 26, 26, 4)
+        track(sel)
+        for i = 1, 7 do
+            local sw = make("Button", content)
+            if sw then
+                pcall(function() sw:SetBackgroundColor(PALETTE[i]) end)
+                addWidget(content, sw, cw - 262 + (i - 1) * 30, y + 10, 20, 20, 5)
+                track(sw)
+                onClick(sw, function()
+                    setVal(item, i)
+                    val = i
+                    pcall(function()
+                        if selSlot then
+                            selSlot:SetPosition(vector((cw - 262 + (i - 1) * 30 - 3) * M.scale, (y + 7) * M.scale))
+                        end
+                    end)
+                end)
+            end
+        end
+    end
+
+    local function isColorItem(item)
+        local txt = string.lower(labelOf(item))
+        local maxv = tonumber(item.MaxValue) or 0
+        return (maxv > 0 and maxv <= 7) and
+            (string.find(txt, "warna", 1, true) or string.find(txt, "color", 1, true))
+    end
+
+    local function renderRows()
+        if not valid(state.content) then return end
+        clearRows()
+        local cw = W - 40
+        local cats = _G.LexusMenuCategories or {}
+        local configTab = #cats + 1
+        local rows = {}
+
+        if state.tab == configTab then
+            local names = {"LEGIT", "RAGE", "SKIN"}
+            for i, name in ipairs(names) do
+                rows[#rows + 1] = {kind = "preset", name = name}
+            end
+            rows[#rows + 1] = {kind = "save"}
+            rows[#rows + 1] = {kind = "reset"}
+            rows[#rows + 1] = {kind = "info"}
+        else
+            local cat = cats[state.tab]
+            local stack = cat and cat.Stack or {}
+            local search = state.search
+            local hasSearch = search ~= nil and search:match("%S") ~= nil
+            local master = {}
+            for _, item in ipairs(stack) do
+                local text = labelOf(item)
+                local match = true
+                if hasSearch then
+                    match = string.find(string.lower(text), string.lower(search), 1, true) ~= nil
+                end
+                if isHeader(item) then
+                    master[item.Key] = getVal(item) ~= false
+                    if match or not hasSearch then
+                        rows[#rows + 1] = {kind = "header", item = item}
+                    end
+                else
+                    local parentOn = true
+                    if item.ExpandHandle then parentOn = master[item.ExpandHandle] ~= false end
+                    if match and (parentOn or hasSearch) then
+                        rows[#rows + 1] = {kind = "item", item = item}
+                    end
+                end
+            end
+        end
+
+        state.rows = rows
+        local pages = math.max(1, math.ceil(#rows / RPP))
+        if state.page > pages then state.page = pages end
+        if state.page < 1 then state.page = 1 end
+        if state.pageLabel then
+            pcall(function() state.pageLabel:SetText(state.page .. " / " .. pages) end)
+        end
+
+        local start = (state.page - 1) * RPP + 1
+        for i = start, math.min(#rows, start + RPP - 1) do
+            local row = rows[i]
+            local y = (i - start) * ROW_H
+            if row.kind == "header" then
+                rowHeader(state.content, row.item, y, cw)
+            elseif row.kind == "item" then
+                if isColorItem(row.item) then
+                    rowColor(state.content, row.item, y, cw)
+                elseif _G.LexusAliasMap and row.item.UI == _G.LexusAliasMap.Slider then
+                    rowSlider(state.content, row.item, y, cw)
+                else
+                    rowToggle(state.content, row.item, y, cw)
+                end
+            elseif row.kind == "preset" then
+                local b, t = button(state.content, row.name, 14, COL.card, COL.accent,
+                    40, y + 6, 200, 32, 4)
+                track(b)
+                onClick(b, function() M.ApplyPreset(row.name) end)
+            elseif row.kind == "save" then
+                local b = button(state.content, "SIMPAN CONFIG", 13, COL.accent, COL.bg,
+                    40, y + 6, 200, 32, 4)
+                track(b)
+                onClick(b, function()
+                    pcall(function() if _G.SaveModSettings then _G.SaveModSettings() end end)
+                    M.SetStatus("Config disimpan")
+                end)
+            elseif row.kind == "reset" then
+                local b = button(state.content, "RESET KE DEFAULT", 13, COL.danger, COL.text,
+                    260, y + 6, 200, 32, 4)
+                track(b)
+                onClick(b, function() M.ResetDefaults() end)
+            elseif row.kind == "info" then
+                local t = textBlock(state.content,
+                    "Profil cepat: LEGIT / RAGE / SKIN. Perubahan lain tetap tersimpan otomatis.",
+                    12, COL.muted, 40, y + 12, cw - 80, 24, 3)
+                track(t)
+            end
+        end
+    end
+
+    -- ---------------- PANEL ----------------
+    local function updateTabs()
+        for i, b in ipairs(state.tabBtns) do
+            local active = (i == state.tab)
+            pcall(function() b:SetBackgroundColor(active and COL.card or COL.panel) end)
+        end
+        if valid(state.indicator) then
+            local tw = (W - 48) / TABN
+            pcall(function()
+                if state.indicatorSlot then
+                    state.indicatorSlot:SetPosition(vector((24 + (state.tab - 1) * tw) * M.scale, (76 + 36) * M.scale))
+                    state.indicatorSlot:SetSize(vector(tw * M.scale, 3 * M.scale))
+                end
+            end)
+        end
+    end
+
+    function M.SetStatus(msg)
+        state.status = tostring(msg or "")
+        if valid(state.statusLabel) then
+            pcall(function() state.statusLabel:SetText(state.status) end)
+        end
+    end
+
+    function M.ApplyPreset(name)
+        local C = _G.LexusConfig
+        if not C then return end
+        if name == "LEGIT" then
+            C.EspLoai9 = true; C.Esp9_Box = true; C.Esp9_HPBar = true
+            C.Esp9_Skeleton = true; C.Esp9_Line = true
+            C.AimbotMode = 1; C.AimTouchEnable = false; C.CustomAimbot = false
+            C.AutoHead = false; C.GodMode = false; C.MagicBullet = false
+            C.WallClimb = false; C.FastCar = false; C.ModSkin = false
+            C.ColorBodyV2 = false; C.EspOutline = false
+        elseif name == "RAGE" then
+            C.EspLoai9 = true; C.Esp9_Box = true; C.Esp9_Skeleton = true
+            C.Esp9_Line = true; C.EspAimWarning = true
+            C.AimbotMode = 3; C.AimTouchEnable = true; C.CustomAimbot = true
+            C.AutoHead = true; C.GodMode = true; C.MagicBullet = true
+            C.WallClimb = true; C.FastCar = true
+        elseif name == "SKIN" then
+            C.ModSkin = true; C.SkinAttachment = true; C.SkinDeadBox = true
+            C.ModEmote = true; C.EspLoai9 = false; C.AimbotMode = 1
+            C.AimTouchEnable = false; C.GodMode = false; C.MagicBullet = false
+        end
+        pcall(function() if _G.SaveModSettings then _G.SaveModSettings() end end)
+        M.SetStatus("Profil " .. name .. " aktif")
+        renderRows()
+    end
+
+    function M.ResetDefaults()
+        if state.defaults and _G.LexusConfig then
+            for k, v in pairs(state.defaults) do _G.LexusConfig[k] = v end
+            pcall(function() if _G.SaveModSettings then _G.SaveModSettings() end end)
+            M.SetStatus("Config di-reset")
+            renderRows()
+        end
+    end
+
+    local function buildPanel()
+        local root, parent = getRoot()
+        if not parent then return false end
+        state.root, state.parent = root, parent
+        M.scale = computeScale(parent)
+
+        local panel = make("CanvasPanel", parent)
+        if not panel then return false end
+        state.panel = panel
+        local slot = parent:AddChildToCanvas(panel)
+        if not slot then return false end
+        pcall(function() slot:SetAutoSize(false) end)
+        pcall(function() slot:SetSize(vector(W * M.scale, H * M.scale)) end)
+        pcall(function() slot:SetZOrder(9000) end)
+        pcall(function()
+            local a = slot:GetAnchors()
+            a.Minimum, a.Maximum = vector(0.5, 0.5), vector(0.5, 0.5)
+            slot:SetAnchors(a)
+            slot:SetAlignment(vector(0.5, 0.5))
+            slot:SetPosition(vector(0, 0))
+        end)
+
+        border(panel, COL.bg, 0, 0, W, H, 1)
+        border(panel, COL.accent, 0, 0, W, 3, 2)
+        border(panel, COL.border, 0, 0, 1, H, 2)
+        border(panel, COL.border, W - 1, 0, 1, H, 2)
+
+        textBlock(panel, "NEWBIE", 28, COL.text, 24, 12, 200, 34, 3)
+        textBlock(panel, "VIP  ·  TACTICAL PANEL", 11, COL.accent, 24, 44, 260, 20, 3)
+        textBlock(panel, "4.7.0.21783", 10, COL.muted, 24, 62, 160, 18, 3)
+
+        local close = button(panel, "X", 14, COL.dim, COL.text, W - 52, 18, 30, 30, 4)
+        onClick(close, function() M.Hide() end)
+
+        local search = make("EditableTextBox", panel)
+        if search then
+            pcall(function() search:SetHintText("Cari fitur...") end)
+            addWidget(panel, search, W - 320, 20, 190, 28, 4)
+            pcall(function()
+                local ev = search.OnTextChanged
+                if ev and ev.Add then
+                    ev:Add(function(text)
+                        state.search = tostring(text or "")
+                        state.page = 1
+                        renderRows()
+                    end)
+                end
+            end)
+        end
+
+        -- tab bar
+        local tw = (W - 48) / TABN
+        local labels = {}
+        local cats = _G.LexusMenuCategories or {}
+        for i, cat in ipairs(cats) do labels[i] = cat.Label or cat.Key end
+        labels[TABN] = "CONFIG"
+        for i = 1, TABN do
+            local b, t = button(panel, labels[i] or ("T" .. i), 11, COL.panel, COL.muted,
+                24 + (i - 1) * tw, 76, tw - 4, 36, 3)
+            state.tabBtns[i] = b
+            onClick(b, function()
+                state.tab = i
+                state.page = 1
+                updateTabs()
+                renderRows()
+            end)
+        end
+        state.indicator, state.indicatorSlot = border(panel, COL.accent, 24, 112, tw - 4, 3, 4)
+
+        local content = make("CanvasPanel", panel)
+        if content then
+            addWidget(panel, content, 20, 120, W - 40, H - 176, 3)
+            state.content = content
+        end
+
+        state.statusLabel = textBlock(panel, "", 11, COL.muted, 24, H - 40, 320, 22, 3)
+        local save = button(panel, "SAVE", 12, COL.accent, COL.bg, W - 300, H - 44, 80, 28, 4)
+        onClick(save, function()
+            pcall(function() if _G.SaveModSettings then _G.SaveModSettings() end end)
+            M.SetStatus("Config disimpan")
+        end)
+        local prev = button(panel, "<", 14, COL.dim, COL.text, W - 204, H - 44, 52, 28, 4)
+        onClick(prev, function()
+            state.page = math.max(1, state.page - 1)
+            renderRows()
+        end)
+        state.pageLabel = textBlock(panel, "1 / 1", 11, COL.muted, W - 146, H - 38, 60, 22, 3)
+        local nxt = button(panel, ">", 14, COL.dim, COL.text, W - 84, H - 44, 52, 28, 4)
+        onClick(nxt, function()
+            state.page = state.page + 1
+            renderRows()
+        end)
+
+        state.built = true
+        state.anim = 0
+        vis(panel, member(member(global("UEnums"), "ESlateVisibility"), "Collapsed"))
+        return true
+    end
+
+    local function buildButton()
+        local root, parent = getRoot()
+        if not parent then return false end
+        state.root, state.parent = root, parent
+        M.scale = computeScale(parent)
+        local b = make("Button", parent)
+        if not b then return false end
+        pcall(function() b:SetBackgroundColor(COL.accent) end)
+        local t = make("TextBlock", b)
+        if t then
+            pcall(function() t:SetText("N") end)
+            textStyle(t, 20, COL.bg)
+            pcall(function() b:AddChild(t) end)
+        end
+        local slot = parent:AddChildToCanvas(b)
+        if not slot then return false end
+        pcall(function() slot:SetAutoSize(false) end)
+        pcall(function() slot:SetSize(vector(52 * M.scale, 52 * M.scale)) end)
+        pcall(function() slot:SetZOrder(9500) end)
+        pcall(function()
+            local a = slot:GetAnchors()
+            a.Minimum, a.Maximum = vector(1, 0.5), vector(1, 0.5)
+            slot:SetAnchors(a)
+            slot:SetAlignment(vector(1, 0.5))
+            slot:SetPosition(vector(-18 * M.scale, 0))
+        end)
+        onClick(b, function() M.Toggle() end)
+        state.button = b
+        return true
+    end
+
+    function M.Toggle()
+        if not state.built or not valid(state.panel) then
+            if not buildPanel() then return end
+        end
+        state.open = not state.open
+        if state.open then
+            state.anim = 0
+            vis(state.panel, member(member(global("UEnums"), "ESlateVisibility"), "Visible"))
+            updateTabs()
+            renderRows()
+            M.SetStatus("")
+        else
+            vis(state.panel, member(member(global("UEnums"), "ESlateVisibility"), "Collapsed"))
+        end
+    end
+    function M.Hide()
+        if state.open then M.Toggle() end
+    end
+
+    function M.Tick()
+        state.tick = state.tick + 1
+        if not valid(state.button) or not valid(state.parent) then
+            state.built = false
+            state.button = nil
+            state.panel = nil
+            state.content = nil
+            state.tabBtns = {}
+            if state.tick % 30 == 0 then buildButton() end
+        elseif not state.built and state.tick % 30 == 0 then
+            buildPanel()
+        end
+        if state.open and valid(state.panel) then
+            state.anim = math.min(1, state.anim + 0.12)
+            pcall(function() state.panel:SetRenderOpacity(state.anim) end)
+        end
+    end
+
+    function M.Init()
+        if not state.defaults and _G.LexusConfig then
+            state.defaults = {}
+            for k, v in pairs(_G.LexusConfig) do state.defaults[k] = v end
+        end
+        buildButton()
+    end
+
+    return M
+end)()
+
+_G.LexusCustomMenu = LexusCustomUI
+_G.LexusCustomMenu_Tick = function()
+    pcall(function() LexusCustomUI.Tick() end)
+end
+pcall(function() LexusCustomUI.Init() end)
