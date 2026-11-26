@@ -22672,13 +22672,14 @@ local LexusCustomUI = (function()
         pcall(function()
             local b = widget.Brush
             if not b then return end
-            b.DrawAs = 4
             local o = b.OutlineSettings
-            if o then
-                o.CornerRadii = construct(global("FVector4") or imported("Vector4"), r, r, r, r)
-                    or {X = r, Y = r, Z = r, W = r}
-                o.Width = 0
-            end
+            -- only switch to RoundedBox when the outline struct is real;
+            -- otherwise leave the brush square (never risk an invisible widget)
+            if not o then return end
+            o.CornerRadii = construct(global("FVector4") or imported("Vector4"), r, r, r, r)
+                or {X = r, Y = r, Z = r, W = r}
+            o.Width = 0
+            b.DrawAs = 4
             widget:SetBrush(b)
         end)
     end
@@ -22761,6 +22762,23 @@ local LexusCustomUI = (function()
         return slot
     end
 
+    local function placeAnchored(parent, widget, size, z, ax, ay, px, py)
+        if not valid(parent) or not valid(widget) then return nil end
+        local slot = parent:AddChildToCanvas(widget)
+        if not slot then return nil end
+        pcall(function() slot:SetAutoSize(false) end)
+        pcall(function() slot:SetSize(vector(size * M.scale, size * M.scale)) end)
+        pcall(function() slot:SetZOrder(z) end)
+        pcall(function()
+            local a = slot:GetAnchors()
+            a.Minimum, a.Maximum = vector(ax, ay), vector(ax, ay)
+            slot:SetAnchors(a)
+            slot:SetAlignment(vector(ax, ay))
+            slot:SetPosition(vector(px * M.scale, py * M.scale))
+        end)
+        return slot
+    end
+
     local function textBlock(parent, text, size, c, x, y, w, h, z)
         local t = make("TextBlock", parent)
         if not t then return nil end
@@ -22786,19 +22804,25 @@ local LexusCustomUI = (function()
     end
 
     local function button(parent, text, size, bg, fg, x, y, w, h, z, r)
+        -- rounded fill as a Border (brush tint is safe), clickable Button on top
+        local bgB = make("Border", parent)
+        if bgB then
+            pcall(function() bgB:SetBrushColor(bg) end)
+            if r and r > 0 then round(bgB, r) end
+            addWidget(parent, bgB, x, y, w, h, z)
+        end
         local b = make("Button", parent)
         if not b then return nil end
-        pcall(function() b:SetBackgroundColor(bg) end)
+        pcall(function() b:SetBackgroundColor(color(0, 0, 0, 0)) end)
         pcall(function() b:SetRenderTransformPivot(vector(0.5, 0.5)) end)
-        if r and r > 0 then round(b, r) end
         local t = make("TextBlock", b)
         if t then
             pcall(function() t:SetText(text) end)
             textStyle(t, size, fg)
             pcall(function() b:AddChild(t) end)
         end
-        addWidget(parent, b, x, y, w, h, z)
-        return b, t
+        addWidget(parent, b, x, y, w, h, (z or 1) + 1)
+        return b, t, bgB
     end
 
     local function onClick(widget, fn)
@@ -22872,14 +22896,14 @@ local LexusCustomUI = (function()
         track(label)
         border(content, color(1, 1, 1, 0.045), 8, y + ROW_H - 2, cw - 16, 1, 2, 0)
         local val = getVal(item) ~= false
-        local b, t = button(content, val and "ON" or "OFF", 11,
+        local b, t, bgB = button(content, val and "ON" or "OFF", 11,
             val and COL.accent or COL.idle, val and color(0.06, 0.07, 0.09, 1) or COL.muted,
             cw - 92, y + 8, 64, 28, 5, 14)
         track(b)
         onClick(b, function()
             local nv = not (getVal(item) ~= false)
             setVal(item, nv)
-            pcall(function() b:SetBackgroundColor(nv and COL.accent or COL.idle) end)
+            pcall(function() bgB:SetBrushColor(nv and COL.accent or COL.idle) end)
             pcall(function() t:SetText(nv and "ON" or "OFF") end)
             textStyle(t, 11, nv and color(0.06, 0.07, 0.09, 1) or COL.muted)
         end)
@@ -22891,14 +22915,14 @@ local LexusCustomUI = (function()
         track(label)
         border(content, color(1, 1, 1, 0.030), 8, y + ROW_H - 1, cw - 16, 1, 2, 0)
         local val = getVal(item) == true
-        local b, t = button(content, val and "ON" or "OFF", 11,
+        local b, t, bgB = button(content, val and "ON" or "OFF", 11,
             val and COL.accent or COL.idle, val and color(0.06, 0.07, 0.09, 1) or COL.muted,
             cw - 92, y + 8, 64, 28, 5, 14)
         track(b)
         onClick(b, function()
             local nv = getVal(item) ~= true
             setVal(item, nv)
-            pcall(function() b:SetBackgroundColor(nv and COL.accent or COL.idle) end)
+            pcall(function() bgB:SetBrushColor(nv and COL.accent or COL.idle) end)
             pcall(function() t:SetText(nv and "ON" or "OFF") end)
             textStyle(t, 11, nv and color(0.06, 0.07, 0.09, 1) or COL.muted)
         end)
@@ -22943,12 +22967,13 @@ local LexusCustomUI = (function()
             cw - 266 + (val - 1) * 30, y + 6, 26, 26, 4, 13)
         track(sel)
         for i = 1, 7 do
+            local chip = border(content, PALETTE[i],
+                cw - 263 + (i - 1) * 30, y + 9, 20, 20, 5, 10)
+            track(chip)
             local sw = make("Button", content)
             if sw then
-                pcall(function() sw:SetBackgroundColor(PALETTE[i]) end)
-                pcall(function() sw:SetRenderTransformPivot(vector(0.5, 0.5)) end)
-                round(sw, 10)
-                addWidget(content, sw, cw - 263 + (i - 1) * 30, y + 9, 20, 20, 5)
+                pcall(function() sw:SetBackgroundColor(color(0, 0, 0, 0)) end)
+                addWidget(content, sw, cw - 263 + (i - 1) * 30, y + 9, 20, 20, 6)
                 track(sw)
                 onClick(sw, function()
                     setVal(item, i)
@@ -23244,30 +23269,29 @@ local LexusCustomUI = (function()
         if not parent then return false end
         state.root, state.parent = root, parent
         M.scale = computeScale(parent)
+
+        local rim = make("Border", parent)
+        if rim then
+            pcall(function() rim:SetBrushColor(COL.accent) end)
+            round(rim, 27)
+            placeAnchored(parent, rim, 54, 9500, 1, 0.5, -18, 0)
+        end
+        local glassBtn = make("Border", parent)
+        if glassBtn then
+            pcall(function() glassBtn:SetBrushColor(COL.glass2) end)
+            round(glassBtn, 25)
+            placeAnchored(parent, glassBtn, 50, 9501, 1, 0.5, -20, 0)
+        end
         local b = make("Button", parent)
         if not b then return false end
-        pcall(function() b:SetBackgroundColor(COL.glass2) end)
-        pcall(function() b:SetRenderTransformPivot(vector(0.5, 0.5)) end)
-        round(b, 27)
-        local ring = border(b, COL.accent, 2, 2, 50, 50, 1, 25)
+        pcall(function() b:SetBackgroundColor(color(0, 0, 0, 0)) end)
         local t = make("TextBlock", b)
         if t then
             pcall(function() t:SetText("N") end)
             textStyle(t, 20, COL.text)
             pcall(function() b:AddChild(t) end)
         end
-        local slot = parent:AddChildToCanvas(b)
-        if not slot then return false end
-        pcall(function() slot:SetAutoSize(false) end)
-        pcall(function() slot:SetSize(vector(54 * M.scale, 54 * M.scale)) end)
-        pcall(function() slot:SetZOrder(9500) end)
-        pcall(function()
-            local a = slot:GetAnchors()
-            a.Minimum, a.Maximum = vector(1, 0.5), vector(1, 0.5)
-            slot:SetAnchors(a)
-            slot:SetAlignment(vector(1, 0.5))
-            slot:SetPosition(vector(-18 * M.scale, 0))
-        end)
+        placeAnchored(parent, b, 54, 9502, 1, 0.5, -18, 0)
         onClick(b, function() M.Toggle() end)
         state.button = b
         return true
