@@ -22687,7 +22687,26 @@ local LexusCustomUI = (function()
     local W, H = 820, 520
     local ROW_H = 44
     local RPP = 7
-    local TABN = 7
+
+    -- ESP V1 (Cat_ESP) is retired: keep only the main ESP V2 stack.
+    local function getCats()
+        local out = {}
+        for _, c in ipairs(_G.LexusMenuCategories or {}) do
+            if c.Key ~= "Cat_ESP" then out[#out + 1] = c end
+        end
+        return out
+    end
+    pcall(function()
+        local sp = require("client.logic.NewSetting.SettingPageDefine")
+        local md = sp and sp.ModMenu
+        if md and md.Category then
+            local keep = {}
+            for _, c in ipairs(md.Category) do
+                if c.Key ~= "Cat_ESP" then keep[#keep + 1] = c end
+            end
+            md.Category = keep
+        end
+    end)
 
     -- Titanium liquid glass: graphite glass, brushed-silver rim, Apple red accent.
     local COL = {
@@ -23009,7 +23028,7 @@ local LexusCustomUI = (function()
         if not valid(state.content) then return end
         clearRows()
         local cw = W - 40
-        local cats = _G.LexusMenuCategories or {}
+        local cats = getCats()
         local configTab = #cats + 1
         local rows = {}
 
@@ -23098,7 +23117,7 @@ local LexusCustomUI = (function()
 
     -- ---------------- PANEL ----------------
     local function updateTabs()
-        local tw = (W - 48) / TABN
+        local tw = (W - 48) / (state.tabCount or 7)
         for i, b in ipairs(state.tabBtns) do
             local active = (i == state.tab)
             pcall(function() b:SetBackgroundColor(color(0, 0, 0, 0)) end)
@@ -23212,14 +23231,17 @@ local LexusCustomUI = (function()
         end
 
         -- tabs
-        local tw = (W - 48) / TABN
+        local cats = getCats()
+        local tabCount = #cats + 1
+        state.tabCount = tabCount
+        if state.tab > tabCount then state.tab = 1 end
+        local tw = (W - 48) / tabCount
         local labels = {}
-        local cats = _G.LexusMenuCategories or {}
         for i, cat in ipairs(cats) do labels[i] = cat.Label or cat.Key end
-        labels[TABN] = "CONFIG"
+        labels[tabCount] = "CONFIG"
         state.tabPill, state.tabPillSlot = border(panel, COL.tabOn,
             24 + 5, 86, tw - 10, 30, 4, 15)
-        for i = 1, TABN do
+        for i = 1, tabCount do
             local b, t = button(panel, labels[i] or ("T" .. i), 11,
                 color(0, 0, 0, 0), COL.muted,
                 24 + (i - 1) * tw, 86, tw - 4, 30, 6)
@@ -23374,7 +23396,7 @@ local LexusCustomUI = (function()
 
         if valid(state.indicatorSlot) then
             state.tabPos = state.tabPos + (state.tabTarget - state.tabPos) * 0.22
-            local tw = (W - 48) / TABN
+            local tw = (W - 48) / (state.tabCount or 7)
             pcall(function()
                 state.indicatorSlot:SetPosition(vector(state.tabPos * M.scale, 118 * M.scale))
                 state.indicatorSlot:SetSize(vector((tw - 20) * M.scale, 2 * M.scale))
