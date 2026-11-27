@@ -5586,7 +5586,6 @@ function _G.InitModMenuTab()
         }
 
         _G.LexusMenuCategories = {
-            {Key = "Cat_ESP", Label = "VISUAL", Stack = StackESP},
             {Key = "Cat_ESPV2", Label = "ESP", Stack = StackESPV2},
             {Key = "Cat_Aimbot", Label = "AIM", Stack = StackAimbot},
             {Key = "Cat_AimbotV2", Label = "AIM+", Stack = StackAimbotV2},
@@ -5598,6 +5597,22 @@ function _G.InitModMenuTab()
         -- Urutan paling bawah: append tanpa index 1
         table.insert(SettingCatalog, SettingPageDefine.ModMenu)
     end
+    -- Refresh the tab list even when the guard above skipped the setup block.
+    pcall(function()
+        local md = SettingPageDefine and SettingPageDefine.ModMenu
+        local map = {
+            Cat_ESPV2 = "ESP", Cat_Aimbot = "AIM", Cat_AimbotV2 = "AIM+",
+            Cat_Combat = "COMBAT", Cat_Skin = "SKIN",
+        }
+        local out, seen = {}, {}
+        for _, c in ipairs((md and md.Category) or {}) do
+            if c.Key ~= "Cat_ESP" and not seen[c.Key] then
+                seen[c.Key] = true
+                out[#out + 1] = {Key = c.Key, Label = map[c.Key] or c.Key, Stack = c.Stack}
+            end
+        end
+        if #out > 0 then _G.LexusMenuCategories = out end
+    end)
 
     local UIManager = _G.UIManager
     if UIManager and not UIManager._IsModMenuHooked then
@@ -22715,39 +22730,52 @@ local LexusCustomUI = (function()
     local W, H = 820, 520
     local ROW_H = 44
     local RPP = 7
-    local UI_VERSION = "7"
+    local UI_VERSION = "8"
 
-    -- ESP V1 (Cat_ESP) is retired: keep only the main ESP V2 stack.
-    -- Fallback to the native ModMenu table if the global category list is stale.
+    -- ESP V1 (Cat_ESP) is retired. The tab order is hardcoded so the bar can
+    -- never collapse into a lone CONFIG tab, whatever globals survived a reload.
+    local CAT_ORDER = { "Cat_ESPV2", "Cat_Aimbot", "Cat_AimbotV2", "Cat_Combat", "Cat_Skin" }
     local CAT_LABEL = {
         Cat_ESPV2 = "ESP", Cat_Aimbot = "AIM", Cat_AimbotV2 = "AIM+",
         Cat_Combat = "COMBAT", Cat_Skin = "SKIN",
     }
+    local function nativeModMenu()
+        local ok, sp = pcall(require, "client.logic.NewSetting.SettingPageDefine")
+        if ok and sp and sp.ModMenu then return sp.ModMenu end
+        local ok2, sp2 = pcall(require, "client.logic.newsetting.settingpagedefine")
+        if ok2 and sp2 and sp2.ModMenu then return sp2.ModMenu end
+    end
     local function getCats()
-        local out, seen = {}, {}
+        local stacks = {}
         for _, c in ipairs(_G.LexusMenuCategories or {}) do
-            if c.Key ~= "Cat_ESP" and not seen[c.Key] then
-                seen[c.Key] = true
-                out[#out + 1] = c
+            if type(c.Key) == "string" and type(c.Stack) == "table" and not stacks[c.Key] then
+                stacks[c.Key] = c.Stack
             end
         end
-        if #out < 2 then
-            local ok, sp = pcall(require, "client.logic.NewSetting.SettingPageDefine")
-            local md = ok and sp and sp.ModMenu
-            if md and md.Category then
-                for _, c in ipairs(md.Category) do
-                    if c.Key ~= "Cat_ESP" and not seen[c.Key] then
-                        seen[c.Key] = true
-                        out[#out + 1] = {Key = c.Key, Label = CAT_LABEL[c.Key] or c.Key, Stack = c.Stack}
-                    end
+        local md = nativeModMenu()
+        if md and type(md.Category) == "table" then
+            for _, c in ipairs(md.Category) do
+                if type(c.Key) == "string" and type(c.Stack) == "table" and not stacks[c.Key] then
+                    stacks[c.Key] = c.Stack
                 end
+            end
+        end
+        local out, seen = {}, {}
+        for _, k in ipairs(CAT_ORDER) do
+            seen[k] = true
+            out[#out + 1] = { Key = k, Label = CAT_LABEL[k] or k, Stack = stacks[k] }
+        end
+        for _, c in ipairs(_G.LexusMenuCategories or {}) do
+            if type(c.Key) == "string" and c.Key ~= "Cat_ESP" and not seen[c.Key] then
+                seen[c.Key] = true
+                out[#out + 1] = { Key = c.Key, Label = c.Label or CAT_LABEL[c.Key] or c.Key,
+                                  Stack = stacks[c.Key] or c.Stack }
             end
         end
         return out
     end
     pcall(function()
-        local sp = require("client.logic.NewSetting.SettingPageDefine")
-        local md = sp and sp.ModMenu
+        local md = nativeModMenu()
         if md and md.Category then
             local keep = {}
             for _, c in ipairs(md.Category) do
@@ -22757,12 +22785,31 @@ local LexusCustomUI = (function()
         end
     end)
 
+    -- Widget registry survives script re-runs, so a panel left over from the
+    -- previous execution can never sit behind the new one (that ghost offset
+    -- rectangle at the bottom-right was exactly that).
+    local REG = _G.__LexusUIWidgets
+    if type(REG) ~= "table" then
+        REG = {}
+        _G.__LexusUIWidgets = REG
+    else
+        for i = #REG, 1, -1 do
+            local w = REG[i]
+            REG[i] = nil
+            pcall(function() if w and valid(w) then w:RemoveFromParent() end end)
+        end
+    end
+    local function reg(w)
+        if w ~= nil then REG[#REG + 1] = w end
+        return w
+    end
+
     -- Titanium liquid glass: graphite glass, brushed-silver rim, Apple red accent.
     local COL = {
         dim      = color(0.004, 0.005, 0.007, 0.50),
         shadow   = color(0.000, 0.000, 0.000, 0.46),
-        glass    = color(0.070, 0.085, 0.115, 0.80),
-        glass2   = color(0.095, 0.115, 0.150, 0.62),
+        glass    = color(0.070, 0.085, 0.115, 0.88),
+        glass2   = color(0.095, 0.115, 0.150, 0.70),
         stroke   = color(1.000, 1.000, 1.000, 0.060),
         highlight= color(1.000, 1.000, 1.000, 0.34),
         accent   = color(0.840, 0.860, 0.890, 1.00),  -- titanium light
@@ -22913,18 +22960,16 @@ local LexusCustomUI = (function()
         end)
     end
 
-    -- Frosted stack: shadow, tinted glass, vertical sheen, specular hairline.
+    -- Frosted stack: tinted glass, one top sheen, uniform hairline rim.
     local function glass(parent, x, y, w, h, z, r)
         local base = border(parent, COL.glass, x, y, w, h, z + 1, r)
         local inset = math.floor((r or 0) * 0.6)
-        border(parent, color(1, 1, 1, 0.045), x + inset, y + 1, w - inset * 2, math.floor(h * 0.42), z + 2, 0)
-        border(parent, color(1, 1, 1, 0.020), x + inset, y + math.floor(h * 0.42), w - inset * 2, math.floor(h * 0.22), z + 2, 0)
+        border(parent, color(1, 1, 1, 0.035), x + inset, y + 1, w - inset * 2, math.floor(h * 0.42), z + 2, 0)
         -- brushed titanium rim: light top, mid sides, dark bottom
         border(parent, color(0.88, 0.90, 0.93, 0.55), x + inset, y, w - inset * 2, 1, z + 3, 0)
         border(parent, color(0.56, 0.58, 0.62, 0.28), x + 1, y + inset, 1, h - inset * 2, z + 3, 0)
         border(parent, color(0.56, 0.58, 0.62, 0.28), x + w - 2, y + inset, 1, h - inset * 2, z + 3, 0)
         border(parent, color(0.26, 0.275, 0.30, 0.55), x + inset, y + h - 1, w - inset * 2, 1, z + 3, 0)
-        border(parent, color(1, 1, 1, 0.10), x + inset, y + 1, w - inset * 2, 1, z + 3, 0)
         return base
     end
 
@@ -22955,7 +23000,9 @@ local LexusCustomUI = (function()
     end
 
     local function clearRows()
+        local collapsed = member(member(global("UEnums"), "ESlateVisibility"), "Collapsed")
         for _, w in ipairs(state.widgets) do
+            pcall(function() vis(w, collapsed) end)
             pcall(function() w:RemoveFromParent() end)
         end
         state.widgets = {}
@@ -23222,6 +23269,11 @@ local LexusCustomUI = (function()
         state.root, state.parent = root, parent
         M.scale = computeScale(parent)
 
+        local cats = getCats()
+        local tabCount = #cats + 1
+        state.tabCount = tabCount
+        if state.tab > tabCount then state.tab = 1 end
+
         -- tap-outside-to-close scrim
         local dim = make("Button", parent)
         if dim then
@@ -23229,11 +23281,13 @@ local LexusCustomUI = (function()
             addWidget(parent, dim, -900, -900, 4000, 3000, 8900)
             onClick(dim, function() M.Hide() end)
             state.dim = dim
+            reg(dim)
         end
 
         local panel = make("CanvasPanel", parent)
         if not panel then return false end
         state.panel = panel
+        reg(panel)
         local slot = parent:AddChildToCanvas(panel)
         if not slot then return false end
         pcall(function() slot:SetAutoSize(false) end)
@@ -23254,7 +23308,7 @@ local LexusCustomUI = (function()
         local dot = border(panel, COL.red, 24, 21, 8, 8, 6, 4)
         textBlock(panel, "NEWBIE", 30, COL.text, 40, 8, 240, 36, 6)
         textBlock(panel, "VIP  ·  TACTICAL PANEL", 10, COL.titan2, 41, 44, 260, 18, 6)
-        textBlock(panel, "4.7.0.21783  ·  UI " .. UI_VERSION, 9, COL.faint, 41, 60, 240, 16, 6)
+        textBlock(panel, "4.7.0.21783  ·  UI " .. UI_VERSION .. "  ·  " .. tostring(tabCount) .. "T", 9, COL.faint, 41, 60, 280, 16, 6)
         border(panel, color(1, 1, 1, 0.055), 24, 78, W - 48, 1, 6, 0)
 
         local close = button(panel, "X", 13, COL.idle, COL.text, W - 56, 18, 32, 32, 7, 16)
@@ -23279,10 +23333,6 @@ local LexusCustomUI = (function()
         end
 
         -- tabs
-        local cats = getCats()
-        local tabCount = #cats + 1
-        state.tabCount = tabCount
-        if state.tab > tabCount then state.tab = 1 end
         local tw = (W - 48) / tabCount
         local labels = {}
         for i, cat in ipairs(cats) do labels[i] = cat.Label or cat.Key end
@@ -23354,21 +23404,24 @@ local LexusCustomUI = (function()
 
         local rim = make("Border", parent)
         if rim then
-            pcall(function() rim:SetBrushColor(COL.titan1) end)
+            pcall(function() rim:SetBrushColor(color(0.62, 0.65, 0.70, 0.92)) end)
             round(rim, 27)
             placeAnchored(parent, rim, 54, 9500, 1, 0.5, -18, 0)
+            reg(rim)
         end
         local glassBtn = make("Border", parent)
         if glassBtn then
-            pcall(function() glassBtn:SetBrushColor(COL.glass2) end)
+            pcall(function() glassBtn:SetBrushColor(color(0.075, 0.082, 0.095, 0.95)) end)
             round(glassBtn, 25)
             placeAnchored(parent, glassBtn, 50, 9501, 1, 0.5, -20, 0)
+            reg(glassBtn)
         end
         local dot = make("Border", parent)
         if dot then
             pcall(function() dot:SetBrushColor(COL.red) end)
             round(dot, 4)
             placeAnchored(parent, dot, 8, 9503, 1, 0.5, -23, -19)
+            reg(dot)
         end
         local b = make("Button", parent)
         if not b then return false end
@@ -23382,6 +23435,7 @@ local LexusCustomUI = (function()
         placeAnchored(parent, b, 54, 9502, 1, 0.5, -18, 0)
         onClick(b, function() M.Toggle() end)
         state.button = b
+        reg(b)
         return true
     end
 
@@ -23406,6 +23460,18 @@ local LexusCustomUI = (function()
     end
     function M.Hide()
         if state.open then M.Toggle() end
+    end
+
+    function M.Destroy()
+        for i = #REG, 1, -1 do
+            local w = REG[i]
+            REG[i] = nil
+            pcall(function() if w and valid(w) then w:RemoveFromParent() end end)
+        end
+        state.panel, state.dim, state.button, state.content = nil, nil, nil, nil
+        state.tabBtns, state.tabTexts, state.widgets = {}, {}, {}
+        state.rows, state.pulses = {}, {}
+        state.open, state.closing, state.built = false, false, false
     end
 
     function M.Tick()
