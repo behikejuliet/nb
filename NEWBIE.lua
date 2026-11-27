@@ -22715,12 +22715,33 @@ local LexusCustomUI = (function()
     local W, H = 820, 520
     local ROW_H = 44
     local RPP = 7
+    local UI_VERSION = "7"
 
     -- ESP V1 (Cat_ESP) is retired: keep only the main ESP V2 stack.
+    -- Fallback to the native ModMenu table if the global category list is stale.
+    local CAT_LABEL = {
+        Cat_ESPV2 = "ESP", Cat_Aimbot = "AIM", Cat_AimbotV2 = "AIM+",
+        Cat_Combat = "COMBAT", Cat_Skin = "SKIN",
+    }
     local function getCats()
-        local out = {}
+        local out, seen = {}, {}
         for _, c in ipairs(_G.LexusMenuCategories or {}) do
-            if c.Key ~= "Cat_ESP" then out[#out + 1] = c end
+            if c.Key ~= "Cat_ESP" and not seen[c.Key] then
+                seen[c.Key] = true
+                out[#out + 1] = c
+            end
+        end
+        if #out < 2 then
+            local ok, sp = pcall(require, "client.logic.NewSetting.SettingPageDefine")
+            local md = ok and sp and sp.ModMenu
+            if md and md.Category then
+                for _, c in ipairs(md.Category) do
+                    if c.Key ~= "Cat_ESP" and not seen[c.Key] then
+                        seen[c.Key] = true
+                        out[#out + 1] = {Key = c.Key, Label = CAT_LABEL[c.Key] or c.Key, Stack = c.Stack}
+                    end
+                end
+            end
         end
         return out
     end
@@ -23233,7 +23254,7 @@ local LexusCustomUI = (function()
         local dot = border(panel, COL.red, 24, 21, 8, 8, 6, 4)
         textBlock(panel, "NEWBIE", 30, COL.text, 40, 8, 240, 36, 6)
         textBlock(panel, "VIP  ·  TACTICAL PANEL", 10, COL.titan2, 41, 44, 260, 18, 6)
-        textBlock(panel, "4.7.0.21783", 9, COL.faint, 41, 60, 160, 16, 6)
+        textBlock(panel, "4.7.0.21783  ·  UI " .. UI_VERSION, 9, COL.faint, 41, 60, 240, 16, 6)
         border(panel, color(1, 1, 1, 0.055), 24, 78, W - 48, 1, 6, 0)
 
         local close = button(panel, "X", 13, COL.idle, COL.text, W - 56, 18, 32, 32, 7, 16)
