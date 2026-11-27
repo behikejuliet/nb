@@ -5577,7 +5577,6 @@ function _G.InitModMenuTab()
             Text = 999000,
             UIKey = "Setting_Page_Privacy",
             Category = {
-                { Key = "Cat_ESP",      Text = 999001, Stack = StackESP },
                 { Key = "Cat_ESPV2",    Text = 999006, Stack = StackESPV2 },
                 { Key = "Cat_Aimbot",   Text = 999002, Stack = StackAimbot },
                 { Key = "Cat_AimbotV2", Text = 999003, Stack = StackAimbotV2 },
