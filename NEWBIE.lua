@@ -22644,11 +22644,40 @@ local LexusCustomUI = (function()
         local setter = member(w, "SetWidgetVisibility") or member(w, "SetVisibility")
         if type(setter) == "function" then pcall(setter, w, v) end
     end
+    -- iPhone-style font: try cooked UFont assets shipped with the game, then
+    -- fall back to the engine's Roboto. Custom TTF cannot be loaded from Lua.
+    local FONT_CANDIDATES = {
+        "/Game/UMG/Fonts/SFProText-Regular",
+        "/Game/UI/Fonts/SFProText-Regular",
+        "/Game/Fonts/SFProText-Regular",
+        "/Game/UMG/Fonts/SFPro-Regular",
+        "/Engine/EngineFonts/Roboto",
+        "/Engine/EngineFonts/RobotoLight",
+    }
+    local fontObj, fontTried = nil, false
+    local function getFont()
+        if fontTried then return fontObj end
+        fontTried = true
+        local game = global("CGame")
+        if not game then return nil end
+        for _, path in ipairs(FONT_CANDIDATES) do
+            local ok, obj = pcall(function() return game:NewObjectFromPath(path, nil) end)
+            if ok and obj then
+                fontObj = obj
+                break
+            end
+        end
+        return fontObj
+    end
+
     local function textStyle(w, size, c)
         pcall(function()
             local f = w.Font
             if f then
                 f.Size = math.max(1, math.floor(size * (M.scale or 1) + 0.5))
+                local fo = getFont()
+                if fo then pcall(function() f.FontObject = fo end) end
+                pcall(function() f.LetterSpacing = -10 end)
                 local ok = pcall(function() w.Font = f end)
                 if not ok then w:SetFont(f) end
             end
@@ -22709,10 +22738,10 @@ local LexusCustomUI = (function()
 
     -- Titanium liquid glass: graphite glass, brushed-silver rim, Apple red accent.
     local COL = {
-        dim      = color(0.004, 0.005, 0.007, 0.56),
+        dim      = color(0.004, 0.005, 0.007, 0.50),
         shadow   = color(0.000, 0.000, 0.000, 0.46),
-        glass    = color(0.072, 0.077, 0.086, 0.60),
-        glass2   = color(0.118, 0.126, 0.140, 0.48),
+        glass    = color(0.070, 0.085, 0.115, 0.80),
+        glass2   = color(0.095, 0.115, 0.150, 0.62),
         stroke   = color(1.000, 1.000, 1.000, 0.060),
         highlight= color(1.000, 1.000, 1.000, 0.34),
         accent   = color(0.840, 0.860, 0.890, 1.00),  -- titanium light
@@ -22865,7 +22894,6 @@ local LexusCustomUI = (function()
 
     -- Frosted stack: shadow, tinted glass, vertical sheen, specular hairline.
     local function glass(parent, x, y, w, h, z, r)
-        local shadow = border(parent, COL.shadow, x + 2, y + 8, w, h, z, r)
         local base = border(parent, COL.glass, x, y, w, h, z + 1, r)
         local inset = math.floor((r or 0) * 0.6)
         border(parent, color(1, 1, 1, 0.045), x + inset, y + 1, w - inset * 2, math.floor(h * 0.42), z + 2, 0)
@@ -22876,7 +22904,7 @@ local LexusCustomUI = (function()
         border(parent, color(0.56, 0.58, 0.62, 0.28), x + w - 2, y + inset, 1, h - inset * 2, z + 3, 0)
         border(parent, color(0.26, 0.275, 0.30, 0.55), x + inset, y + h - 1, w - inset * 2, 1, z + 3, 0)
         border(parent, color(1, 1, 1, 0.10), x + inset, y + 1, w - inset * 2, 1, z + 3, 0)
-        return base, shadow
+        return base
     end
 
     local function getRoot()
